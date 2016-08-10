@@ -41,18 +41,19 @@ app_ev = app_ev.groupby("event_id")["app_id"].apply(
 ##################
 #   App Labels
 ##################
+###TAKES A LOT OF MEMORY!
 print("# Read App Labels")
-app_labels = pd.read_csv("../input/app_labels.csv")
-app_labels = app_labels.groupby("app_id")["label_id"].apply(
-    lambda x: " ".join(set("app_label:" + str(s) for s in x)))
+app_labels = pd.read_csv("../input/app_labels.csv", dtype={'label_id': np.str})
+app_labels = pd.merge(app_ev_for_labels, app_labels, on='app_id', how='left')
+app_labels = app_labels.drop(['event_id', 'is_installed', 'is_active'], axis=1)
+
+del app_ev_for_labels
+###TAKES A LOT OF MEMORY!
+app_labels = app_labels["label_id"].apply(
+    lambda x: "app_label:" + str(x))
 app_labels = pd.DataFrame(app_labels)
 app_labels['app_id'] = app_labels.index
 app_labels = app_labels[['app_id','label_id']] 
-
-#app_ev_for_labels = pd.DataFrame(app_ev_for_labels.set_index('app_id'))
-
-app_labels = pd.merge(app_ev_for_labels, app_labels, on='app_id', how='left')
-#app_labels4 = app_labels3.copy()
 ################
 
 ##################
@@ -160,11 +161,12 @@ Df["device_model"] = Df["device_model"].apply(
 ###################
 #  Concat Feature
 ###################
-app_labels = app_labels.drop(['event_id', 'is_installed', 'is_active'], axis=1)
-app_labels.drop_duplicates('app_id',keep='first',inplace=True)
+#app_labels = app_labels.drop(['event_id', 'is_installed', 'is_active'], axis=1)
+#app_labels.drop_duplicates('app_id',keep='first',inplace=True)
 #app_labels = app_labels4.drop(['event_id', 'is_installed', 'is_active'], axis=1)
-app_labels['app_id'] = app_labels['app_id'].apply(lambda x: "app_id:" + str(x))
+#app_labels['app_id'] = app_labels['app_id'].apply(lambda x: "app_id:" + str(x))
 
+###TAKES A LOT OF MEMORY!
 new_app_labels = pd.merge(events, app_labels, on='app_id', how='left')
 
 
