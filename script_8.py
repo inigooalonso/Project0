@@ -11,6 +11,7 @@ Based on yibo's R script and JianXiao's translation to Python
 import pandas as pd
 import numpy as np
 import xgboost as xgb
+from copy import deepcopy
 from scipy import sparse
 from sklearn.feature_extraction import FeatureHasher, DictVectorizer
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer, HashingVectorizer
@@ -252,17 +253,31 @@ class classifier_booster(object):
         n_samples = X.shape[0]
         if sample_weight == None:
             sample_weight = np.ones(n_samples)/float(n_samples)
-        models = []
-        model_weights = []
+        self.models = []
+        self.model_weights = []
+        using_keras = False
+        try:
+            init_model = self.clf.get_weights()
+            using_keras = True
+        except:
+            init_model = clf
         for i in xrange(self.n_estimators):
+            if using_keras == True:
+                init_model
+            else:
+                
             self.clf.fit(X, y, sample_weight)
             pred_prob = self.clf.predict_proba(X)
             pred_prob[pred_prob < 1e-15] = 1e-15
             pred_prob[pred_prob > 1-1e-15] = 1-1e-15
-            err = -np.multiply(np.log(pred_prob), indicator(y)).sum(axis=1)
+            err = -np.multiply(np.log(pred_prob), self.indicator(y)).sum(axis=1)
+            total_error = err.sum()
+            self.model_weights.append(np.log())
+            clf.get_weights()
+            self.model.append(deepcopy(clf))
             
     def predict_proba(self, X):
-        model.pred
+        
         
         
 
