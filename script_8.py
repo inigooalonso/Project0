@@ -186,24 +186,30 @@ n_train = X_train.shape[0]
 hidden_units_1 = 48
 num_classes = 12
 p_dropout = 0.0
-
-def indicator(y):
-    ind = np.zeros((y.shape[0], num_classes))
-    ind[np.arange(y.shape[0]), y] = 1
-    return ind
+filepath="weights-improvement-{epoch:02d}-{val_loss:.3f}.hdf5"
 
 from keras.models import Sequential
 from keras.layers import Dense, Activation
+from keras.layers.core import Dropout
+from keras.layers.advanced_activations import PReLU
 from keras.regularizers import l2
 from keras.optimizers import Adadelta
 from keras.optimizers import SGD
 from keras.wrappers.scikit_learn import KerasClassifier
+from keras.callbacks import ModelCheckpoint
 
 def create_model():
     # create model
     model = Sequential()
-    model.add(Dense(output_dim=64, input_dim=num_inputs, W_regularizer=l2(1.0)))
-    model.add(Activation("relu"))
+    model.add(Dense(output_dim=300, input_dim=num_inputs, W_regularizer=l2(0.7)))
+    model.add(Activation('relu'))
+    model.add(Dropout(0.1))
+    model.add(Dense(output_dim=100, W_regularizer=l2(1.0)))
+    model.add(Activation('relu'))
+    model.add(Dropout(0.3))
+    model.add(Dense(output_dim=50, W_regularizer=l2(1.0)))
+    model.add(Activation('relu'))    
+    model.add(Dropout(0.4))
     model.add(Dense(output_dim=num_classes, W_regularizer=l2(1.0)))
     model.add(Activation("softmax"))
     # Compile model
@@ -214,7 +220,7 @@ def create_model():
 
 class KerasClassifier2(KerasClassifier):
         
-    def __init__(self, build_fn, random_state=0, nb_epoch=6, batch_size=500, verbose=2):
+    def __init__(self, build_fn, random_state=0, nb_epoch=12, batch_size=500, verbose=2):
         self.random_state = random_state
         self.nb_epoch = nb_epoch
         self.batch_size = batch_size
@@ -222,55 +228,41 @@ class KerasClassifier2(KerasClassifier):
         super(KerasClassifier2, self).__init__(build_fn)
         self.classes_= np.arange(12)
         self.n_classes_ = 12
+        self.model = build_fn()
         
     def fit(self, X, y, sample_weight=None):
-        return super(KerasClassifier2, self).fit(X, indicator(y), verbose = self.verbose,
-                                sample_weight=sample_weight*n_train,
-                                validation_data=(X_cv, indicator(y_cv)),
-                                nb_epoch=self.nb_epoch, batch_size=self.batch_size)
+        return super(KerasClassifier2, self).fit(X, indicator(y),
+                         verbose = self.verbose,
+                         sample_weight=sample_weight,
+                         validation_data=(X_cv, indicator(y_cv)),
+                         nb_epoch=self.nb_epoch, batch_size=self.batch_size,
+                         callbacks=[ModelCheckpoint(filepath,
+                                                    save_best_only=True)])
     def predict_proba(self, X):
         return super(KerasClassifier2, self).predict_proba(X, batch_size=500, verbose=0)
+        
+    def predict(self, X):
+        return super(KerasClassifier2, self).predict_proba(X, batch_size=500, verbose=0)            
 
-class classifier_booster(object):
-    '''
-    Takes in a classifier and creates boosted classifier similar to Adaboost
-    but trains on log loss instead of exponential loss. In creation, clf is the
-    base, n_estimators is how many rounds of boosting are completed and pct is
-    what percentage of data points are used in each round to do the boost
-    '''
-    def __init__(self, clf, n_estimators, pct):
-        self.clf = clf
-        self.n_estimators = n_estimators
-        self.pct = pct
-        
-    def indicator(y):
-        ind = np.zeros((y.shape[0], num_classes))
-        ind[np.arange(y.shape[0]), y] = 1
-        return ind
-        
-    def fit(self, X, y, sample_weight = None):
-        n_samples = X.shape[0]
-        if sample_weight == None:
-            sample_weight = np.ones(n_samples)/float(n_samples)
-        models = []
-        model_weights = []
-        for i in xrange(self.n_estimators):
-            self.clf.fit(X, y, sample_weight)
-            pred_prob = self.clf.predict_proba(X)
-            pred_prob[pred_prob < 1e-15] = 1e-15
-            pred_prob[pred_prob > 1-1e-15] = 1-1e-15
-            err = -np.multiply(np.log(pred_prob), indicator(y)).sum(axis=1)
-            
-    def predict_proba(self, X):
-        model.pred
-        
-        
+clfNN1 = KerasClassifier2(build_fn=create_model)
+clfNN1.fit(X_train_cv, y_train_cv)
+pred_prob_nn1 = clfNN1.predict_proba(X_test)
 
-clfNN = KerasClassifier2(build_fn=create_model)
-#clfAdaNN = AdaBoostClassifier(base_estimator=clfNN, n_estimators=5, learning_rate=1)
-wgts = np.ones(n_train)/float(n_train)
-clfNN.fit(X_train, y_train, sample_weight=wgts)
-clfAdaNN.fit(X_train, y_train)
+clfNN2 = KerasClassifier2(build_fn=create_model)
+clfNN2.fit(X_train_cv, y_train_cv)
+pred_prob_nn2 = clfNN2.predict_proba(X_test)
+
+clfNN3 = KerasClassifier2(build_fn=create_model)
+clfNN3.fit(X_train_cv, y_train_cv)
+pred_prob_nn3 = clfNN3.predict_proba(X_test)
+
+clfNN4 = KerasClassifier2(build_fn=create_model)
+clfNN4.fit(X_train_cv, y_train_cv)
+pred_prob_nn4 = clfNN4.predict_proba(X_test)
+
+clfNN5 = KerasClassifier2(build_fn=create_model)
+clfNN5.fit(X_train_cv, y_train_cv)
+pred_prob_nn5 = clfNN5.predict_proba(X_test)
 
 
 def logloss(pred_prob, actual):
@@ -307,12 +299,27 @@ gbm = xgb.train(params, dtrain, 40, evals=watchlist,
                 early_stopping_rounds=25, verbose_eval=True)
 
 print("# Train")
-dtrain = xgb.DMatrix(X_train, y_train)
-gbm = xgb.train(params, dtrain, 40, verbose_eval=True)
-y_pre = gbm.predict(xgb.DMatrix(X_test))
+dtrain = xgb.DMatrix(X_train_cv, y_train_cv)
+dtest = xgb.DMatrix(X_test)
+
+gbm1 = xgb.train(params, dtrain, 40, verbose_eval=True)
+pred_prob_xgb1 = gbm1.predict(dtest)
+
+gbm1 = xgb.train(params, dtrain, 40, verbose_eval=True)
+pred_prob_xgb2 = gbm2.predict(dtest)
+
+gbm1 = xgb.train(params, dtrain, 40, verbose_eval=True)
+pred_prob_xgb3 = gbm3.predict(dtest)
+
+gbm1 = xgb.train(params, dtrain, 40, verbose_eval=True)
+pred_prob_xgb4 = gbm4.predict(dtest)
+
+gbm1 = xgb.train(params, dtrain, 40, verbose_eval=True)
+pred_prob_xgb5 = gbm5.predict(dtest)
+
 ### cv log_loss=2.30242
 
-clfLR = LogisticRegression(C=.02, random_state=2016, multi_class='multinomial', solver='lbfgs')
+clfLR = LogisticRegression(C=.02, random_state=2016, multi_class='multinomial', solver='newton-cg')
 clfLR.fit(X_train,y_train)
 print  "Log Loss = {}".format(logloss(clfLR.predict_proba(X_cv), y_cv))
 pred_prob_LR = clfLR.predict(X_test)
@@ -322,8 +329,11 @@ pred_prob_LR = clfLR.predict(X_test)
 #print  "Log Loss = {}".format(logloss(clfMLP.predict_proba(X_cv), y_cv))
 #pred_prob_MLP = clfMLP.predict(X_test)
 
-#Combine results of NN and xgboost
-#y_pre = (pred_prob_nn+y_pre)/2.0 
+#Combine results and run through Logistic Regression (to be completed)
+np.
+clfAggLR = LogisticRegression(C=.02, random_state=2016, multi_class='multinomial', solver='lbfgs')
+clfAggLR.fit
+y_pre = (pred_prob_nn+y_pre)/2.0
 
 # Write results
 result = pd.DataFrame(y_pre, columns=le.classes_)
