@@ -2,8 +2,6 @@
 """
 Created on Wed Jul 27 01:25:43 2016
 
-Based on yibo's R script and JianXiao's translation to Python
-
 @author: Tony
 """
 #LB: 
@@ -12,6 +10,7 @@ import pandas as pd
 import numpy as np
 import xgboost as xgb
 from scipy import sparse
+from mlxtend.classifier import StackingClassifier
 from sklearn.feature_extraction import FeatureHasher, DictVectorizer
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer, HashingVectorizer
 from sklearn.preprocessing import LabelEncoder, OneHotEncoder, scale
@@ -19,15 +18,20 @@ from sklearn.decomposition import PCA, RandomizedPCA, SparsePCA, TruncatedSVD
 from sklearn.cross_validation import train_test_split, cross_val_score, StratifiedShuffleSplit
 from sklearn.feature_selection import VarianceThreshold, SelectPercentile, f_classif, chi2
 from sklearn.linear_model import LogisticRegression, SGDClassifier
-from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier
+from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier, GradientBoostingClassifier
 from sklearn.neighbors import KNeighborsClassifier
-#from sklearn.neural_network import MLPClassifier
 from sklearn.metrics import log_loss
 from sklearn.preprocessing import MaxAbsScaler
+
+def indicator(y):
+    ind = np.zeros((y.shape[0], num_classes))
+    ind[np.arange(y.shape[0]), y] = 1
+    return ind
 
 ###########################################################
 # Concatenate labels and categories to attach to each app #
 ###########################################################
+print "Connecting labels and categories to apps"
 app_labels = pd.read_csv("../input/app_labels.csv", dtype={'app_id': np.str})
 label_categories = pd.read_csv("../input/label_categories.csv")
 label_categories.dropna(inplace=True)
@@ -50,6 +54,7 @@ del app_lab_cat
 ##################################################
 # Merge features onto apps in events/device_id's #
 ##################################################
+print "Merging features onto apps in events/devices"
 app_ev = pd.read_csv("../input/app_events.csv", dtype={'device_id': np.str, 'app_id': np.str})
 app_ev.drop(['is_installed', 'is_active'], axis=1, inplace=True)
 app_ev['app_lab'] = app_ev['app_id'].map(app_lab)
@@ -72,7 +77,7 @@ events.drop_duplicates(['device_id', 'app_id'], inplace=True)
 #############################################################
 # Merge features and prep for training with CountVectorizer #
 #############################################################
-
+print "Merging features together"
 events_app = events.groupby("device_id")['app_id'].apply(lambda x: " ".join(s for s in x))
 events_lab = events.groupby("device_id")['app_lab'].apply(lambda x: " ".join(s for s in x))
 events_cat = events.groupby("device_id")['app_cat'].apply(lambda x: " ".join(s for s in x))
@@ -97,7 +102,7 @@ del events
 ##################
 #  Train and Test
 ##################
-
+print "Encoding features and combining them to sparse matrices"
 train = pd.read_csv("../input/gender_age_train.csv", dtype={'device_id': np.str})
 y = train["group"]
 le = LabelEncoder()
@@ -127,12 +132,18 @@ dev_lab = df['labels']
 # For each device, count app_id's, labels, and category names
 app_vectorizer = CountVectorizer(binary=True)
 dev_app = app_vectorizer.fit_transform(dev_app)
+app_vectorizer_count = CountVectorizer()
+dev_app_count = app_vectorizer_count.fit_transform(dev_app)
 
 lab_vectorizer = CountVectorizer(binary=True)
 dev_lab = lab_vectorizer.fit_transform(dev_lab)
+lab_vectorizer_count = CountVectorizer()
+dev_lab_count = lab_vectorizer_count.fit_transform(dev_lab)
 
 cat_vectorizer = CountVectorizer(binary=True)
 dev_cat = cat_vectorizer.fit_transform(dev_cat)
+cat_vectorizer_count = CountVectorizer()
+dev_cat_count = cat_vectorizer_count.fit_transform(dev_cat)
 
 cv_brand = CountVectorizer(binary=True)
 brands = cv_brand.fit_transform(brands)
@@ -141,6 +152,7 @@ cv_model = CountVectorizer(binary=True)
 models = cv_model.fit_transform(models)
 
 X_sp = sparse.hstack([brands, dev_app, dev_lab, models], format='csr')
+X_sp_count = sparse.hstack([brands, dev_app_count, dev_lab_count, models], format='csr')
 del models
 del brands
 del dev_lab
@@ -186,7 +198,6 @@ n_train = X_train.shape[0]
 hidden_units_1 = 48
 num_classes = 12
 p_dropout = 0.0
-filepath="weights-improvement-{epoch:02d}-{val_loss:.3f}.hdf5"
 
 from keras.models import Sequential
 from keras.layers import Dense, Activation
@@ -203,24 +214,24 @@ def create_model():
     model = Sequential()
     model.add(Dense(output_dim=300, input_dim=num_inputs, W_regularizer=l2(0.7)))
     model.add(Activation('relu'))
-    model.add(Dropout(0.1))
-    model.add(Dense(output_dim=100, W_regularizer=l2(1.0)))
+    model.add(Dropout(0.2))
+    model.add(Dense(output_dim=100, W_regularizer=l2(2.0)))
     model.add(Activation('relu'))
-    model.add(Dropout(0.3))
-    model.add(Dense(output_dim=50, W_regularizer=l2(1.0)))
-    model.add(Activation('relu'))    
     model.add(Dropout(0.4))
-    model.add(Dense(output_dim=num_classes, W_regularizer=l2(1.0)))
+    model.add(Dense(output_dim=50, W_regularizer=l2(2.0)))
+    model.add(Activation('relu'))    
+    model.add(Dropout(0.5))
+    model.add(Dense(output_dim=num_classes, W_regularizer=l2(2.0)))
     model.add(Activation("softmax"))
     # Compile model
     adadelta = Adadelta(lr=1.0, rho=0.95, epsilon=1e-08)
-    sgd = SGD(lr=0.03, decay=1e-6, momentum=0.9, nesterov=True)
+    sgd = SGD(lr=0.05, decay=1e-6, momentum=0.9, nesterov=True)
     model.compile(loss='categorical_crossentropy', optimizer=adadelta, metrics=['accuracy'])
     return model
 
 class KerasClassifier2(KerasClassifier):
         
-    def __init__(self, build_fn, random_state=0, nb_epoch=12, batch_size=500, verbose=2):
+    def __init__(self, build_fn, random_state=0, nb_epoch=10, batch_size=500, verbose=2):
         self.random_state = random_state
         self.nb_epoch = nb_epoch
         self.batch_size = batch_size
@@ -235,9 +246,9 @@ class KerasClassifier2(KerasClassifier):
                          verbose = self.verbose,
                          sample_weight=sample_weight,
                          validation_data=(X_cv, indicator(y_cv)),
-                         nb_epoch=self.nb_epoch, batch_size=self.batch_size,
-                         callbacks=[ModelCheckpoint(filepath,
-                                                    save_best_only=True)])
+                         nb_epoch=self.nb_epoch, batch_size=self.batch_size)
+
+
     def predict_proba(self, X):
         return super(KerasClassifier2, self).predict_proba(X, batch_size=500, verbose=0)
         
@@ -245,105 +256,56 @@ class KerasClassifier2(KerasClassifier):
         return super(KerasClassifier2, self).predict_proba(X, batch_size=500, verbose=0)            
 
 clfNN1 = KerasClassifier2(build_fn=create_model)
-clfNN1.fit(X_train_cv, y_train_cv)
-pred_prob_nn1 = clfNN1.predict_proba(X_test)
-
 clfNN2 = KerasClassifier2(build_fn=create_model)
-clfNN2.fit(X_train_cv, y_train_cv)
-pred_prob_nn2 = clfNN2.predict_proba(X_test)
-
 clfNN3 = KerasClassifier2(build_fn=create_model)
-clfNN3.fit(X_train_cv, y_train_cv)
-pred_prob_nn3 = clfNN3.predict_proba(X_test)
-
 clfNN4 = KerasClassifier2(build_fn=create_model)
-clfNN4.fit(X_train_cv, y_train_cv)
-pred_prob_nn4 = clfNN4.predict_proba(X_test)
-
 clfNN5 = KerasClassifier2(build_fn=create_model)
-clfNN5.fit(X_train_cv, y_train_cv)
-pred_prob_nn5 = clfNN5.predict_proba(X_test)
 
-
-def logloss(pred_prob, actual):
-    # Takes the probabilities of each class and compares them with actual
-    # values to give the log loss. Limit values near 0 and 1 since they are
-    # undefined. Returns log loss only of actual class.
-    pred_prob[pred_prob < 1e-15] = 1e-15
-    pred_prob[pred_prob > 1-1e-15] = 1-1e-15
-    log_prob = np.log(pred_prob)
-    indicator_actual = np.zeros(pred_prob.shape)
-    indicator_actual[np.arange(len(actual)), actual] = 1
-    err = -np.multiply(log_prob, indicator_actual)
-    return err.sum()/float(err.shape[0])
-#print("Log Loss = {}".format(logloss(pred_prob_cv_nn, y_cv)))
-### Log Loss = 
-
-
-dtrain = xgb.DMatrix(X_train, y_train)
-dvalid = xgb.DMatrix(X_cv, y_cv)
-
-params = {
-    "objective": "multi:softprob",
-    "num_class": 12,
-    "booster": "gblinear",
-    "max_depth":6,
-    "eval_metric": "mlogloss",
-    "eta": 0.07,
-    "silent": 1,
-    "alpha":3.5,
+xgb_params = {
+"objective": "multi:softprob",
+"num_class": 12,
+"booster": "gblinear",
+"max_depth": 6,
+"eval_metric": "mlogloss",
+"eta": 0.07,
+"silent": 1,
+"alpha": 3.5,
 }
 
-watchlist = [(dtrain, 'train'), (dvalid, 'eval')]
-gbm = xgb.train(params, dtrain, 40, evals=watchlist,
-                early_stopping_rounds=25, verbose_eval=True)
+class XGBClassifier2(xgb.XGBClassifier):
 
-print("# Train")
-dtrain = xgb.DMatrix(X_train_cv, y_train_cv)
-dtest = xgb.DMatrix(X_test)
+    def __init__(self, max_depth=xgb_params['max_depth'],
+                 objective='multi:softprob', missing=None, 
+                 learning_rate=xgb_params['eta'], n_estimators=40, subsample=1,
+                 reg_alpha=xgb_params['alpha'], seed=2016, booster='gblinear'):
+        super(XGBClassifier2, self).__init__(max_depth=max_depth, seed=seed,
+                    objective=objective, missing=missing,
+                    learning_rate=learning_rate, n_estimators=n_estimators,
+                    subsample=subsample, reg_alpha=reg_alpha)
+        self.booster = xgb_params['booster']
+        
+    def fit(self, X, y):
+        super(XGBClassifier2, self).fit(X, y, eval_metric='mlogloss')
 
-gbm1 = xgb.train(params, dtrain, 40, verbose_eval=True)
-pred_prob_xgb1 = gbm1.predict(dtest)
-
-gbm1 = xgb.train(params, dtrain, 40, verbose_eval=True)
-pred_prob_xgb2 = gbm2.predict(dtest)
-
-gbm1 = xgb.train(params, dtrain, 40, verbose_eval=True)
-pred_prob_xgb3 = gbm3.predict(dtest)
-
-gbm1 = xgb.train(params, dtrain, 40, verbose_eval=True)
-pred_prob_xgb4 = gbm4.predict(dtest)
-
-gbm1 = xgb.train(params, dtrain, 40, verbose_eval=True)
-pred_prob_xgb5 = gbm5.predict(dtest)
-
-### cv log_loss=2.30242
+gbm1 = XGBClassifier2()
+gbm2 = XGBClassifier2()
+gbm3 = XGBClassifier2()
+gbm4 = XGBClassifier2()
+gbm5 = XGBClassifier2()
 
 clfLR = LogisticRegression(C=.02, random_state=2016, multi_class='multinomial', solver='newton-cg')
-clfLR.fit(X_train,y_train)
-print  "Log Loss = {}".format(logloss(clfLR.predict_proba(X_cv), y_cv))
-pred_prob_LR = clfLR.predict(X_test)
 
-#clfMLP = MLPClassifier()
-#clfMLP.fit(X_train,y_train)
-#print  "Log Loss = {}".format(logloss(clfMLP.predict_proba(X_cv), y_cv))
-#pred_prob_MLP = clfMLP.predict(X_test)
-
-#Combine results and run through Logistic Regression (to be completed)
-np.
-clfAggLR = LogisticRegression(C=.02, random_state=2016, multi_class='multinomial', solver='lbfgs')
-clfAggLR.fit
-y_pre = (pred_prob_nn+y_pre)/2.0
+#Combine results of classifiers
+clf_ls = [gbm1,gbm2,gbm3,gbm4,gbm5,clfNN1,clfNN2,clfNN3,clfNN4,clfNN5,clfLR]
+meta = LogisticRegression()
+stack = StackingClassifier(clf_ls, meta, use_probas=True, verbose=1)
+stack.fit(X_train_cv, y)
+y_pre = stack.predict_proba(X_test)
+#y_pre = (pred_prob_nn+y_pre)/2.0 
 
 # Write results
 result = pd.DataFrame(y_pre, columns=le.classes_)
 result["device_id"] = test_dev
 result = result.set_index("device_id")
-result.to_csv('counting_features.gz', index=True,
+result.to_csv('stacking_1.gz', index=True,
               index_label='device_id', compression="gzip")
-              
-#result = pd.DataFrame(pred_prob_LR, columns=le.classes_)
-#result["device_id"] = test_dev
-#result = result.set_index("device_id")
-#result.to_csv('linear_reg.gz', index=True,
-#              index_label='device_id', compression="gzip")
