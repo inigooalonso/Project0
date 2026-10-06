@@ -1,7 +1,13 @@
-# Reglas de join DEFINIDAS A MANO para el catálogo REAL (modo «Tu RAG»).
+# Reglas de join DEFINIDAS A MANO (paso 3 · Joins y glosario).
 #
-# Mismo formato que data/mock/joins.yaml. Se usan cuando el RAG real devuelve
-# tablas de ho_master. Ejemplo (la descripción de t_o1dm_franchise_gm_daily
+# El paso 3 busca aquí el camino que conecta las tablas que autoriza tu RAG.
+# Si hace falta una tabla intermedia, la añade como «tabla puente». Formato:
+#   left / right: tabla y campo de cada extremo (base.tabla.campo)
+#   type: tipo de join recomendado
+#   cardinality: relación entre left y right
+#   description: significado de negocio de la relación
+#
+# Ejemplo (la descripción de t_o1dm_franchise_gm_daily
 # indica que se integra por ID de operación con t_nztg_trade_core_information;
 # sustituye <campo_id_operacion> por el nombre físico real):
 #

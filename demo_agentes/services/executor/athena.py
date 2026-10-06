@@ -1,4 +1,4 @@
-"""Ejecutor REAL: Amazon Athena con awswrangler (tu llamada original)."""
+"""Ejecutor: Amazon Athena con awswrangler (tu llamada original)."""
 from __future__ import annotations
 
 import time
@@ -10,7 +10,6 @@ from services.watchdog import run_with_timeout
 
 class AthenaExecutor:
     name = "Amazon Athena"
-    simulated = False
 
     def __init__(self, database: str = "ho_master", workgroup: str = "sandbox", max_rows: int = 500,
                  timeout_s: float = 120.0) -> None:
@@ -24,7 +23,7 @@ class AthenaExecutor:
             import awswrangler as wr
         except ImportError as exc:
             raise ServiceUnavailable("executor", "Athena no está disponible en este equipo",
-                                     "Falta la librería awswrangler (requirements-aws.txt).",
+                                     "Falta la librería awswrangler (pip install -r requirements.txt).",
                                      describe_exception(exc)) from exc
 
         DATABASE_MASTER = self.database
@@ -50,5 +49,5 @@ class AthenaExecutor:
         elapsed = time.perf_counter() - start
         return ExecutionResult(
             df=df_tables.head(self.max_rows), engine=self.name, elapsed_s=elapsed, row_count=len(df_tables),
-            truncated=len(df_tables) > self.max_rows, executed_sql=sql_query, simulated=False,
+            truncated=len(df_tables) > self.max_rows, executed_sql=sql_query,
         )

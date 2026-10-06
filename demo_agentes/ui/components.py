@@ -1,12 +1,19 @@
 """Piezas visuales reutilizables (HTML escapado + estilos de ui/theme.py)."""
 from __future__ import annotations
 
+from dataclasses import dataclass
 from html import escape
 
 import streamlit as st
 
-from core.models import Kpi
 from ui.theme import KIND_COLORS
+
+
+@dataclass
+class Kpi:
+    label: str
+    value: str
+    caption: str = ""
 
 
 def esc(value) -> str:
@@ -16,12 +23,6 @@ def esc(value) -> str:
 def pill(text: str, kind: str = "", dot: bool = False) -> str:
     dot_html = '<span class="dot"></span>' if dot else ""
     return f'<span class="ada-pill {kind}">{dot_html}{esc(text)}</span>'
-
-
-def mode_pill(simulated: list[str]) -> str:
-    if simulated:
-        return pill("Datos simulados · " + ", ".join(simulated), "mock", dot=True)
-    return pill("Servicios reales", "live", dot=True)
 
 
 def page_header(eyebrow: str, title: str, subtitle: str = "") -> None:

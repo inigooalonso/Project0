@@ -17,26 +17,10 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-from services.factory import warm_up  # noqa: E402
-from ui import settings_panel  # noqa: E402
-from ui.theme import inject_css, register_plotly_template  # noqa: E402
+from ui.theme import inject_css  # noqa: E402
 
 inject_css()
-register_plotly_template()
 st.logo(str(Path(__file__).parent / "assets" / "logo.svg"), size="large")
-
-
-@st.cache_resource(show_spinner="Preparando los datos simulados (solo la primera vez)…")
-def _warm_up() -> bool:
-    try:
-        warm_up()
-    except Exception:  # la ejecución simulada informará del problema en su paso
-        logging.getLogger(__name__).exception("No se ha podido preparar la base simulada")
-    return True
-
-
-_warm_up()
-settings_panel.render()
 
 pages = [
     st.Page("app_pages/portada.py", title="Portada", icon=":material/home:", default=True),

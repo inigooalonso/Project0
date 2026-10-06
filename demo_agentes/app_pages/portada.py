@@ -3,10 +3,7 @@ from __future__ import annotations
 
 import streamlit as st
 
-from ui import runtime
-from ui.components import esc, mode_pill, pill
-
-settings = runtime.current_settings()
+from ui.components import esc, pill
 
 st.html(
     '<div class="ada-hero"><p class="ada-eyebrow">Inteligencia artificial aplicada al dato</p>'
@@ -24,9 +21,9 @@ with left:
             '<div class="name">ADA · Text2SQL</div>'
             "<p>Convierte una pregunta de negocio en una consulta SQL validada, la ejecuta y explica el resultado.</p>"
             "<ul><li>Entiende la pregunta y la formaliza antes de tocar un dato.</li>"
-            "<li>Encuentra los datos en el catálogo: propietario, tabla y campo.</li>"
-            "<li>Pregunta cuando una definición es ambigua.</li>"
-            "<li>Muestra cada paso, de la pregunta al gráfico.</li></ul></div>"
+            "<li>Encuentra los datos en el catálogo: UUAA, tabla y campo.</li>"
+            "<li>Pregunta cuando una definición es ambigua, con todas sus dudas a la vez.</li>"
+            "<li>Muestra cada paso, de la pregunta al resultado de la base de datos.</li></ul></div>"
         )
         st.page_link("app_pages/ada_text2sql.py", label="Abrir ADA", icon=":material/arrow_forward:")
 with right:
@@ -55,7 +52,3 @@ for col, (icon, title, text) in zip(cols, guarantees):
         st.html(f'<div class="ada-guarantee"><span class="ic">{icon}</span><div><b>{esc(title)}</b>'
                 f"<span>{esc(text)}</span></div></div>")
 
-st.space("medium")
-st.html(f'<div style="display:flex;gap:0.6rem;align-items:center">{mode_pill(settings.simulated_services)}'
-        '<span class="ada-muted" style="font-size:0.88rem">Catálogo bancario y datos sintéticos de demostración: '
-        "62 oficinas, 30.000 clientes y 24 meses de historia.</span></div>")

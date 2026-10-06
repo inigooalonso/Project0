@@ -1,10 +1,12 @@
-# Demo en modo simulado (funciona sin red ni credenciales). Python 3.11+.
+# Python 3.11+. La demo usa tu agente LangGraph sobre Bedrock, tu RAG y Athena.
 streamlit>=1.65,<2
-plotly>=6.0,<8
 pandas>=2.2
-numpy>=1.26
 pydantic>=2.7,<3
 pyyaml>=6.0
-duckdb>=1.1,<2      # motor SQL embebido: ejecuta de verdad la SQL sobre los datos simulados
-sqlglot>=25.0       # valida la SQL (solo lectura, tablas autorizadas) y la traduce de Athena a DuckDB
-pytest>=8.0         # tests (opcional en la máquina de la demo)
+sqlglot>=25.0            # valida la SQL: solo lectura, una sentencia y tablas autorizadas
+boto3>=1.34
+langchain-core>=0.3.49   # incluye register_configure_hook (captura de prompts y tokens)
+langchain-aws>=0.2
+langgraph>=0.3
+awswrangler>=3.9         # ejecución en Athena (wr.athena.read_sql_query)
+pytest>=8.0              # tests (opcional en la máquina de la demo)

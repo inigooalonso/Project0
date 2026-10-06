@@ -7,8 +7,8 @@ pipeline, y la pausa por aclaraciones es simplemente un estado más.
     RUNNING ──paso ok──▶ RUNNING (automático) / WAITING_NEXT (modo presentador)
        │                        │ «Siguiente paso»
        │◀───────────────────────┘
-       ├──aclaración──▶ WAITING_USER ──respuesta──▶ RUNNING (repite el paso 5)
-       ├──error──▶ ERROR ──reintentar / continuar con mock──▶ RUNNING
+       ├──aclaraciones──▶ WAITING_USER ──respuestas──▶ RUNNING (repite el paso 5)
+       ├──error──▶ ERROR ──reintentar──▶ RUNNING
        └──último paso──▶ DONE
 """
 from __future__ import annotations
@@ -22,7 +22,6 @@ from typing import Any
 from core.models import (
     STEP_ORDER,
     AgentCall,
-    ClarificationOption,
     ContextBundle,
     ExecutionResult,
     KnowledgeResult,
@@ -43,6 +42,9 @@ SERVICE_OF_STEP = {
 }
 
 
+NO_ANSWER = "Sin respuesta: usa el supuesto más razonable y decláralo."
+
+
 class Phase(str, Enum):
     RUNNING = "running"
     WAITING_USER = "waiting_user"
@@ -56,12 +58,10 @@ class StepRecord:
     status: StepStatus = StepStatus.PENDING
     elapsed_s: float = 0.0
     calls: int = 0
-    simulated: bool | None = None
     source: str = ""
     summary: str = ""
     input_tokens: int | None = None
     output_tokens: int | None = None
-    tokens_estimated: bool = False
     prompts: list[dict[str, str]] | None = None
 
     def add_call(self, call: AgentCall) -> None:
@@ -70,7 +70,6 @@ class StepRecord:
             self.input_tokens = (self.input_tokens or 0) + call.input_tokens
         if call.output_tokens is not None:
             self.output_tokens = (self.output_tokens or 0) + call.output_tokens
-        self.tokens_estimated = self.tokens_estimated or call.tokens_estimated
         if call.prompts:
             self.prompts = call.prompts
 
@@ -82,13 +81,14 @@ class ErrorInfo:
     title: str
     message: str
     detail: str = ""
-    can_fallback: bool = True
 
 
 @dataclass
-class ChatMessage:
-    role: str  # assistant | user
-    content: str
+class ClarificationRound:
+    """Una ronda de aclaraciones: varias preguntas a la vez y sus respuestas."""
+
+    questions: list[str]
+    answers: list[str] | None = None
 
 
 @dataclass
@@ -104,15 +104,12 @@ class PipelineRun:
     rag: RAGResult | None = None
     knowledge: KnowledgeResult | None = None
     context: ContextBundle | None = None
-    clarification_options: list[ClarificationOption] = field(default_factory=list)
-    chat: list[ChatMessage] = field(default_factory=list)
+    rounds: list[ClarificationRound] = field(default_factory=list)
     sql: SQLResult | None = None
     execution: ExecutionResult | None = None
     explanation: str | None = None
     error: ErrorInfo | None = None
     focus: StepId | None = None
-    modes: dict[str, str] = field(default_factory=dict)  # servicios fijados al lanzar la pregunta
-    overrides: dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         # Mismas claves que SQLAgentState del agente.
@@ -163,33 +160,47 @@ class PipelineRun:
         self.current = STEP_ORDER[index + 1]
         self.phase = Phase.RUNNING if self.autoplay else Phase.WAITING_NEXT
 
-    def wait_for_user(self, question: str, options: list[ClarificationOption]) -> None:
-        self.state["pending_question"] = question
-        self.clarification_options = list(options)
-        self.chat.append(ChatMessage("assistant", question))
+    @property
+    def pending_questions(self) -> list[str]:
+        if self.phase == Phase.WAITING_USER and self.rounds and self.rounds[-1].answers is None:
+            return list(self.rounds[-1].questions)
+        return []
+
+    def wait_for_user(self, questions: list[str]) -> None:
+        self.state["pending_question"] = "\n\n".join(questions)
+        self.rounds.append(ClarificationRound(questions=list(questions)))
         self.steps[self.current].status = StepStatus.WAITING
         self.phase = Phase.WAITING_USER
         self.focus = None
 
-    def answer(self, text: str) -> None:
-        """Equivalente a Command(resume=answer) en tu grafo: registra la respuesta y repite el paso 5."""
-        if self.phase != Phase.WAITING_USER or not text.strip():
-            return
-        question = self.state.get("pending_question", "")
-        self.state["clarifications"] = [*self.state["clarifications"], {"question": question, "answer": text.strip()}]
+    def answer(self, answers: list[str]) -> bool:
+        """Equivale a Command(resume=...) en tu grafo, para todas las preguntas de la ronda a la vez.
+
+        Registra un {question, answer} por pregunta (mismo contrato que ask_user) y repite el paso 5.
+        Hace falta al menos una respuesta; las que queden vacías se envían como «Sin respuesta».
+        """
+        questions = self.pending_questions
+        cleaned = [(a or "").strip() for a in answers][: len(questions)]
+        cleaned += [""] * (len(questions) - len(cleaned))
+        if not questions or not any(cleaned):
+            return False
+        cleaned = [a or NO_ANSWER for a in cleaned]
+        self.rounds[-1].answers = cleaned
+        self.state["clarifications"] = [
+            *self.state["clarifications"], *({"question": q, "answer": a} for q, a in zip(questions, cleaned))
+        ]
         self.state["pending_question"] = ""
-        self.chat.append(ChatMessage("user", text.strip()))
-        self.clarification_options = []
         self.phase = Phase.RUNNING
+        return True
 
     def next_step(self) -> None:
         if self.phase == Phase.WAITING_NEXT:
             self.phase = Phase.RUNNING
             self.focus = None
 
-    def fail(self, step: StepId, service: str, title: str, message: str, detail: str, can_fallback: bool) -> None:
+    def fail(self, step: StepId, service: str, title: str, message: str, detail: str) -> None:
         self.steps[step].status = StepStatus.ERROR
-        self.error = ErrorInfo(step, service, title, message, detail, can_fallback)
+        self.error = ErrorInfo(step, service, title, message, detail)
         self.phase = Phase.ERROR
         self.focus = None
 
@@ -199,8 +210,3 @@ class PipelineRun:
         self.steps[self.current].status = StepStatus.PENDING
         self.error = None
         self.phase = Phase.RUNNING
-
-    def fallback_to_mock(self, service: str) -> None:
-        """«Continuar con datos simulados»: ese servicio pasa a mock solo en esta ejecución."""
-        self.overrides[service] = "mock"
-        self.retry()

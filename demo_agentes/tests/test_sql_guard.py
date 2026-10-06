@@ -1,6 +1,6 @@
 import pytest
 
-from services.sql_guard import inspect_sql, to_duckdb, validate_read_only
+from services.sql_guard import inspect_sql, validate_read_only
 
 AUTH = ["ho_master.t_prsg_loans", "ho_master.t_pred_branches"]
 
@@ -30,9 +30,3 @@ def test_unauthorized_tables_are_detected_and_ctes_are_ignored():
     assert set(inspection.tables) == {"ho_master.t_prsg_loans", "ho_master.t_pcli_customers"}
     assert inspection.unauthorized_tables == ["ho_master.t_pcli_customers"]
     assert inspection.cte_count == 1 and inspection.join_count == 1
-
-
-def test_athena_sql_is_transpiled_for_duckdb():
-    duck = to_duckdb("SELECT date_trunc('month', gf_formalization_date) FROM ho_master.t_prsg_loans "
-                     "WHERE gf_formalization_date >= DATE '2025-01-01';")
-    assert "DATE_TRUNC" in duck.upper() and not duck.strip().endswith(";")

@@ -1,14 +1,14 @@
 """Diagramas en DOT (Graphviz) para st.graphviz_chart.
 
 Graphviz viene integrado en Streamlit y se dibuja en el navegador: no hace falta
-ninguna librería adicional para el árbol del RAG ni para el grafo de joins.
+ninguna librería adicional para el grafo de joins.
 """
 from __future__ import annotations
 
 from html import escape
 
-from core.models import KnowledgeResult, RAGResult
-from ui.theme import BORDER, CORE_BLUE, DARK_AQUA, MEDIUM_BLUE, MUTED, NAVY, SKY_SOFT, SURFACE_2, TEXT_2, score_color
+from core.models import KnowledgeResult
+from ui.theme import BORDER, CORE_BLUE, DARK_AQUA, MEDIUM_BLUE, MUTED, NAVY, SKY_SOFT, TEXT_2
 
 FONT = "Helvetica,Arial,sans-serif"
 
@@ -29,44 +29,6 @@ def _graph_header(rankdir: str = "LR", nodesep: float = 0.22, ranksep: float = 0
         f'  node [fontname="{FONT}", shape=box, style="rounded,filled", penwidth=1.2, margin="0.16,0.07"];',
         f'  edge [color="#B5C2D0", penwidth=1.3, arrowsize=0.6, fontname="{FONT}", fontsize=11, fontcolor="{TEXT_2}"];',
     ]
-
-
-def rag_tree_dot(rag: RAGResult, show_candidates: bool, show_scores: bool) -> str:
-    """Árbol propietario → tabla → campo; color = similitud (rampa azul de una sola tinta)."""
-    lines = _graph_header()
-    database = rag.selected_tables[0].split(".")[0] if rag.selected_tables else "catálogo"
-    lines.append(f'  root [label=<<b>Catálogo de datos</b><br/><font point-size="11">{_h(database)}</font>>, '
-                 f'fillcolor="{NAVY}", color="{NAVY}", fontcolor="white", fontsize=14];')
-    for oi, owner in enumerate(rag.owners):
-        if not owner.selected and not show_candidates:
-            continue
-        o_id = f"o{oi}"
-        fill, ink = score_color(owner.score) if owner.selected else (SURFACE_2, MUTED)
-        score = f" · {_score(owner.score)}" if show_scores and owner.score is not None else ""
-        lines.append(f'  {o_id} [label=<<b>{_h(owner.name)}</b><br/><font point-size="11">propietario {_h(owner.code)}{score}</font>>, '
-                     f'fillcolor="{fill}", color="{fill if owner.selected else BORDER}", fontcolor="{ink}", fontsize=14];')
-        lines.append(f'  root -> {o_id} [color="{MEDIUM_BLUE if owner.selected else BORDER}"];')
-        for ti, table in enumerate(owner.tables):
-            if not table.selected and not show_candidates:
-                continue
-            t_id = f"{o_id}t{ti}"
-            fill, ink = score_color(table.score) if table.selected else (SURFACE_2, MUTED)
-            score = f" · {_score(table.score)}" if show_scores and table.score is not None else ""
-            lines.append(f'  {t_id} [label=<<b>{_h(table.short_name)}</b><br/><font point-size="11">{_h(table.label)}{score}</font>>, '
-                         f'fillcolor="{fill}", color="{fill if table.selected else BORDER}", fontcolor="{ink}", fontsize=13];')
-            lines.append(f'  {o_id} -> {t_id} [color="{MEDIUM_BLUE if table.selected else BORDER}"];')
-            for fi, fld in enumerate(table.fields):
-                if not fld.selected and not show_candidates:
-                    continue
-                f_id = f"{t_id}f{fi}"
-                fill, ink = score_color(fld.score) if fld.selected else (SURFACE_2, MUTED)
-                label = _h(fld.name)
-                sub = _h(fld.label) + (f" · {_score(fld.score)}" if show_scores and fld.score is not None else "")
-                lines.append(f'  {f_id} [label=<{label}<br/><font point-size="10">{sub}</font>>, fillcolor="{fill}", '
-                             f'color="{fill if fld.selected else BORDER}", fontcolor="{ink}", fontsize=12];')
-                lines.append(f'  {t_id} -> {f_id} [color="{MEDIUM_BLUE if fld.selected else BORDER}"];')
-    lines.append("}")
-    return "\n".join(lines)
 
 
 def joins_dot(knowledge: KnowledgeResult, key_fields: dict[str, list[str]], labels: dict[str, str]) -> str:

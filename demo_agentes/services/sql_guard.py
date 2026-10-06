@@ -2,8 +2,7 @@
 
 Implementa lo que sugiere el comentario de tu validate_read_only_sql
 ("Optionally add sqlglot parsing and table allow-list validation here"):
-una única sentencia, solo lectura y solo tablas autorizadas. También traduce
-del dialecto de Athena al de DuckDB para ejecutar sobre los datos simulados.
+una única sentencia, solo lectura y solo tablas autorizadas.
 """
 from __future__ import annotations
 
@@ -59,7 +58,7 @@ def inspect_sql(sql: str, authorized_tables: list[str], dialect: str = "athena")
 
 
 def validate_read_only(sql: str, dialect: str = "athena") -> str:
-    """Equivalente simulado de validate_read_only_sql del agente (mismo contrato)."""
+    """Mismo contrato que validate_read_only_sql del agente, con sqlglot."""
     normalized = sql.strip().rstrip(";")
     inspection = inspect_sql(normalized, [], dialect)
     if not inspection.parsed:
@@ -67,9 +66,3 @@ def validate_read_only(sql: str, dialect: str = "athena") -> str:
     if not inspection.single_statement or not inspection.read_only:
         raise ValueError("Only read-only SELECT/CTE SQL is allowed.")
     return normalized + ";"
-
-
-def to_duckdb(sql: str, dialect: str = "athena") -> str:
-    """Traduce la SQL de Athena (Trino) a DuckDB para el ejecutor simulado."""
-    statement = sql.strip().rstrip(";")
-    return sqlglot.transpile(statement, read=dialect, write="duckdb", pretty=True)[0]

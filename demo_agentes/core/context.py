@@ -8,16 +8,12 @@ from __future__ import annotations
 
 from core.models import ContextBundle, KnowledgeResult, RAGResult
 from services.agent.base import estimate_tokens
-from services.catalog import Catalog
 
 
-def assemble_context(rag: RAGResult, knowledge: KnowledgeResult, catalog: Catalog | None, dialect: str) -> ContextBundle:
+def assemble_context(rag: RAGResult, knowledge: KnowledgeResult, dialect: str) -> ContextBundle:
     authorized = list(rag.authorized_tables)
     for bridge in knowledge.bridge_tables:
-        table = catalog.table(bridge) if catalog else None
-        authorized.append(
-            table.authorized_block() if table else f"{bridge}:\n-Description:Tabla puente definida en las reglas de join."
-        )
+        authorized.append(f"{bridge}:\n-Description:Tabla puente definida en las reglas de join.")
     business = list(rag.business_context) + [g.as_context() for g in knowledge.glossary]
     joins = list(rag.join_rules) + [j.as_context() for j in knowledge.joins]
     context = {

@@ -4,7 +4,6 @@ from __future__ import annotations
 import streamlit as st
 
 from core.models import StepId, StepStatus
-from core.orchestrator import ProgressCallback
 from core.pipeline import Phase, PipelineRun
 from ui.steps import clarify, common, context, joins, pseudocode, rag, result, sql
 
@@ -19,14 +18,13 @@ RENDERERS = {
 }
 
 
-def render_stage(run: PipelineRun | None, technical: bool) -> ProgressCallback | None:
+def render_stage(run: PipelineRun | None) -> None:
     if run is None:
         common.welcome()
-        return None
+        return
 
-    progress = None
     if run.phase == Phase.RUNNING:
-        progress = common.running_banner(run)
+        common.running_banner(run)
     elif run.phase == Phase.WAITING_NEXT:
         common.next_banner(run)
     common.focus_notice(run)
@@ -34,17 +32,15 @@ def render_stage(run: PipelineRun | None, technical: bool) -> ProgressCallback |
     step = run.visible_step()
     record = run.steps[step]
     if run.phase == Phase.ERROR and step == run.current:
-        common.stage_header(run, step, technical)
-        common.error_card(run, technical)
-        return None
+        common.stage_header(run, step)
+        common.error_card(run)
+        return
     if record.status in (StepStatus.DONE, StepStatus.WAITING):
-        common.stage_header(run, step, technical)
+        common.stage_header(run, step)
         try:
-            RENDERERS[step](run, technical)
+            RENDERERS[step](run)
         except Exception as exc:  # una vista nunca debe tumbar la demo
             st.info("No se ha podido dibujar este paso. El pipeline sigue disponible.", icon=":material/visibility_off:")
-            if technical:
-                st.caption(f"{type(exc).__name__}: {exc}")
+            st.caption(f"{type(exc).__name__}: {exc}")
     else:
         common.first_step_placeholder(run)
-    return progress

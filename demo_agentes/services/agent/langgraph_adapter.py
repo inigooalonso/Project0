@@ -1,20 +1,41 @@
-"""Adaptador REAL: llama uno a uno a los nodos de tu agente LangGraph.
+"""Adaptador: llama uno a uno a los nodos de tu agente LangGraph.
 
 No se invoca sql_agent_graph de una vez para poder intercalar los pasos que no
 están en el grafo (joins y glosario, contexto, ejecución), medir cada paso y
 pausar en st.session_state. La pausa de ask_user (interrupt) la reproduce la
 máquina de estados con el mismo contrato: clarifications = [{question, answer}].
+
+Aclaraciones: tu nodo decide_if_clarification_is_needed pide «exactly one
+question», lo que obliga a ir pregunta → respuesta → pregunta. Para hacer
+todas las preguntas a la vez, el paso 5 usa tu invoke_pydantic y tu llm con
+el mismo mensaje de usuario y un prompt que pide la lista completa. Tu
+código no se modifica.
 """
 from __future__ import annotations
 
 import importlib
+import json
+import re
 from typing import Any
 
-from core.models import AgentCall, ClarificationDecision, ClarificationOption, Pydantic_SemanticQueryIR, SQLDraft
+from core.models import AgentCall, ClarificationBatch, Pydantic_SemanticQueryIR, SQLDraft
+from services.agent.base import clarification_payload
 from services.errors import ServiceError, ServiceUnavailable, describe_exception, friendly_aws_error
 from services.watchdog import run_with_timeout
 
 READ_ONLY_ERRORS = ("Only read-only", "non-read-only")
+
+
+def unique_questions(questions: list[str]) -> list[str]:
+    """Quita vacías y duplicadas (sin distinguir mayúsculas, espacios ni puntuación)."""
+    seen, result = set(), []
+    for question in questions:
+        text = str(question or "").strip()
+        key = re.sub(r"\W+", " ", text.lower()).strip()
+        if key and key not in seen:
+            seen.add(key)
+            result.append(text)
+    return result
 
 
 def load_agent_module(module_path: str):
@@ -24,7 +45,7 @@ def load_agent_module(module_path: str):
     except ImportError as exc:
         raise ServiceUnavailable(
             "agent", "No se puede cargar tu agente",
-            "Faltan las librerías del modo real (pip install -r requirements-aws.txt).",
+            "Faltan librerías de AWS o LangChain (pip install -r requirements.txt).",
             describe_exception(exc),
         ) from exc
     except Exception as exc:  # p. ej. error al crear el cliente de Bedrock
@@ -49,9 +70,22 @@ def translate_agent_error(exc: Exception) -> ServiceError:
                         "Se ha producido un error inesperado al llamar al LLM.", describe_exception(exc))
 
 
+CLARIFICATION_PROMPT = """You are a data analyst preparing SQL.
+
+Use the semantic query, retrieved context, and prior answers.
+Ask questions only if they are necessary to generate correct SQL:
+for example, an ambiguous metric definition, grain, time period,
+peer-group definition, or target dialect.
+
+Do not ask for information already present in the context or in prior answers.
+Ask ALL the questions you need in this single turn, as a list, at most {max_questions}.
+Each question must cover a different point: never repeat or rephrase the same question.
+Keep each question concise and in the language of the user's query.
+If nothing is needed, return needs_clarification=false and an empty list."""
+
+
 class LangGraphAgentAdapter:
     name = "Bedrock · tu agente LangGraph"
-    simulated = False
 
     def __init__(self, module_path: str, timeout_s: float = 60.0) -> None:
         self.module_path = module_path
@@ -90,21 +124,17 @@ class LangGraphAgentAdapter:
             ir = Pydantic_SemanticQueryIR.model_validate(ir.model_dump())
         return self._telemetry(AgentCall(output=ir), capture)
 
-    def decide_clarification(self, state: dict[str, Any]) -> AgentCall[ClarificationDecision]:
+    def decide_clarifications(self, state: dict[str, Any], max_questions: int) -> AgentCall[ClarificationBatch]:
         module = self.module
-        result, capture = self._call(module.decide_if_clarification_is_needed, state)
-        question = result.get("pending_question") or None
-        decision = ClarificationDecision(needs_clarification=bool(question), question=question)
-        return self._telemetry(AgentCall(output=decision), capture)
+        payload = json.dumps(clarification_payload(state), ensure_ascii=False, default=str)
+        prompt = CLARIFICATION_PROMPT.format(max_questions=max_questions)
+        batch, capture = self._call(module.invoke_pydantic, ClarificationBatch, prompt, payload)
+        questions = unique_questions(batch.questions)[:max_questions]
+        batch = ClarificationBatch(needs_clarification=bool(questions), questions=questions)
+        return self._telemetry(AgentCall(output=batch), capture)
 
     def generate_sql(self, state: dict[str, Any]) -> AgentCall[SQLDraft]:
         module = self.module
         result, capture = self._call(module.generate_sql, state)
         draft = SQLDraft(sql=result["sql"], assumptions=list(result.get("assumptions") or []))
         return self._telemetry(AgentCall(output=draft), capture)
-
-    def clarification_options(self, state: dict[str, Any]) -> list[ClarificationOption]:
-        return []
-
-    def explanation(self, state: dict[str, Any]) -> str | None:
-        return None

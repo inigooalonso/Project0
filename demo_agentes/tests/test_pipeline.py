@@ -1,21 +1,18 @@
-"""Máquina de estados: recorrido completo, pausa por aclaración, modo presentador y fallback."""
-from dataclasses import replace
-
+"""Máquina de estados: recorrido completo, aclaraciones en lote, modo presentador y errores."""
 import pytest
 
-from core.models import STEP_ORDER, ExecutionResult, StepId, StepStatus
+from core.models import STEP_ORDER, StepId, StepStatus
 from core.orchestrator import Orchestrator
-from core.pipeline import Phase, PipelineRun
-from core.result_profile import build_kpis, headline, profile_result
+from core.pipeline import NO_ANSWER, Phase, PipelineRun
 from services.errors import ServiceUnavailable
-from services.factory import build_services
+from tests.fakes import QUESTION, QUESTIONS, FakeAgent, fake_services
 
 
 def drive(orchestrator, run, answers=(), limit=30):
     answers = list(answers)
     for _ in range(limit):
         if run.phase == Phase.WAITING_USER:
-            run.answer(answers.pop(0))
+            assert run.answer(answers.pop(0))
         elif run.phase == Phase.WAITING_NEXT:
             run.next_step()
         elif run.phase in (Phase.DONE, Phase.ERROR):
@@ -24,45 +21,59 @@ def drive(orchestrator, run, answers=(), limit=30):
     raise AssertionError("el pipeline no termina")
 
 
-@pytest.mark.parametrize("scenario_id,chart", [
-    ("hipotecas_oficina", "bar"), ("saldo_vista", "line"), ("gasto_tarjeta", "bar"),
-])
-def test_scenarios_run_end_to_end(scenario_id, chart, scenarios, services, settings):
-    scenario = next(s for s in scenarios if s.id == scenario_id)
-    run = drive(Orchestrator(services, settings), PipelineRun(scenario.question))
+def test_question_without_doubts_runs_all_steps(settings):
+    services = fake_services(FakeAgent(questions=[]))
+    run = drive(Orchestrator(services, settings), PipelineRun(QUESTION))
     assert run.phase == Phase.DONE, run.error
     assert all(run.steps[s].status == StepStatus.DONE for s in STEP_ORDER)
-    assert run.state["clarifications"] == []
-    profile = profile_result(run.execution.df, run.sql.inspection.order_by)
-    assert profile.kind == chart
-    assert len(build_kpis(run.execution.df, profile)) == 3
-    assert headline(run.execution.df, profile)
+    assert run.state["clarifications"] == [] and run.rounds == []
+    assert run.execution.df.iloc[0]["mesa"] == "Rates"
+    assert run.steps[StepId.PSEUDOCODE].input_tokens == 1200
 
 
-def test_clarification_pauses_and_resumes_from_step_5(scenarios, services, settings):
-    scenario = next(s for s in scenarios if s.id == "morosidad_oficinas")
-    orchestrator = Orchestrator(services, settings)
-    run = PipelineRun(scenario.question)
+def test_all_questions_of_a_round_are_asked_and_answered_at_once(settings):
+    orchestrator = Orchestrator(fake_services(), settings)
+    run = PipelineRun(QUESTION)
     for _ in range(10):
         orchestrator.run_current_step(run)
         if run.phase == Phase.WAITING_USER:
             break
     assert run.current == StepId.CLARIFY and run.steps[StepId.CLARIFY].status == StepStatus.WAITING
-    assert [o.label for o in run.clarification_options] == ["Tasa de mora (> 90 días)", "Ratio de impagados"]
-    orchestrator.run_current_step(run)  # sin respuesta no avanza
+    assert run.pending_questions == QUESTIONS
+    assert run.state["pending_question"] == "\n\n".join(QUESTIONS)
+    orchestrator.run_current_step(run)  # sin respuestas no avanza
     assert run.phase == Phase.WAITING_USER
+    assert not run.answer(["", "  "])  # hace falta al menos una respuesta
 
-    run.answer("Ratio de impagados")
+    assert run.answer(["Margen (gf_franch_oper_rslt_amount)", ""])
     drive(orchestrator, run)
     assert run.phase == Phase.DONE
-    assert run.state["clarifications"] == [{"question": scenario.clarification_question, "answer": "Ratio de impagados"}]
-    assert "ratio_de_impagados_pct" in run.state["sql"]
-    assert run.execution.df.iloc[0]["oficina"] == "Sevilla · Triana"
+    assert run.state["clarifications"] == [
+        {"question": QUESTIONS[0], "answer": "Margen (gf_franch_oper_rslt_amount)"},
+        {"question": QUESTIONS[1], "answer": NO_ANSWER},
+    ]
+    assert run.steps[StepId.CLARIFY].calls == 2  # pregunta y, tras responder, vuelve a decidir
 
 
-def test_presenter_mode_waits_for_next_step(scenarios, services, settings):
-    run = PipelineRun(scenarios[0].question, autoplay=False)
-    orchestrator = Orchestrator(services, settings)
+def test_clarification_rounds_are_limited(settings):
+    agent = FakeAgent(rounds_with_questions=99)
+    run = drive(Orchestrator(fake_services(agent), settings.with_overrides(max_clarification_rounds=2)),
+                PipelineRun(QUESTION), answers=["a", "b"])
+    assert run.phase == Phase.DONE and len(run.rounds) == 2 and agent.decisions == 2
+
+
+def test_questions_per_round_are_capped(settings):
+    agent = FakeAgent(questions=[f"¿Pregunta {i}?" for i in range(8)])
+    orchestrator = Orchestrator(fake_services(agent), settings.with_overrides(max_questions_per_round=3))
+    run = PipelineRun(QUESTION)
+    for _ in range(10):
+        orchestrator.run_current_step(run)
+    assert len(run.pending_questions) == 3
+
+
+def test_presenter_mode_waits_for_next_step(settings):
+    run = PipelineRun(QUESTION, autoplay=False)
+    orchestrator = Orchestrator(fake_services(), settings)
     orchestrator.run_current_step(run)
     assert run.phase == Phase.WAITING_NEXT and run.current == StepId.RAG
     orchestrator.run_current_step(run)  # no hace nada hasta «Siguiente paso»
@@ -74,62 +85,36 @@ def test_presenter_mode_waits_for_next_step(scenarios, services, settings):
 
 class BrokenExecutor:
     name = "Amazon Athena"
-    simulated = False
 
     def execute(self, sql):
         raise ServiceUnavailable("executor", "Sin credenciales para Amazon Athena", "Sin credenciales.", "NoCredentialsError")
 
 
-def test_real_service_failure_offers_fallback_to_mock(scenarios, settings):
-    services = build_services(settings)
-    broken = replace(services, executor=BrokenExecutor())
-    run = drive(Orchestrator(broken, settings), PipelineRun(scenarios[0].question))
+def test_service_failure_stops_at_its_step_and_can_be_retried(settings):
+    agent = FakeAgent(questions=[])
+    run = drive(Orchestrator(fake_services(agent, executor=BrokenExecutor()), settings), PipelineRun(QUESTION))
     assert run.phase == Phase.ERROR and run.current == StepId.EXECUTE
-    assert run.error.service == "executor" and run.error.can_fallback
-    assert run.steps[StepId.EXECUTE].status == StepStatus.ERROR
-
-    run.fallback_to_mock("executor")
-    assert run.overrides == {"executor": "mock"} and run.phase == Phase.RUNNING
-    drive(Orchestrator(services, settings), run)  # mismos pasos ya hechos; solo se repite el 7
-    assert run.phase == Phase.DONE and isinstance(run.execution, ExecutionResult)
+    assert run.error.service == "executor" and run.steps[StepId.EXECUTE].status == StepStatus.ERROR
+    run.retry()
+    drive(Orchestrator(fake_services(agent), settings), run)  # solo se repite el paso 7
+    assert run.phase == Phase.DONE
 
 
-def test_unexpected_exceptions_never_escape(scenarios, settings):
-    class Exploding:
-        name = "LLM"
-        simulated = True
-
+def test_unexpected_exceptions_never_escape(settings):
+    class Exploding(FakeAgent):
         def parse(self, question):
             raise RuntimeError("boom")
 
-    services = replace(build_services(settings), agent=Exploding())
-    run = PipelineRun(scenarios[0].question)
-    Orchestrator(services, settings).run_current_step(run)
+    run = PipelineRun(QUESTION)
+    Orchestrator(fake_services(Exploding()), settings).run_current_step(run)
     assert run.phase == Phase.ERROR and "RuntimeError" in run.error.detail
 
 
-def test_free_question_in_full_mock_mode_is_rejected_gracefully(services, settings):
-    run = PipelineRun("¿Cuántos clientes tenemos en Bilbao?")
-    Orchestrator(services, settings).run_current_step(run)
-    assert run.phase == Phase.ERROR and not run.error.can_fallback
-    assert isinstance(run.error.title, str) and run.error.service == "agent"
-
-
-def test_unauthorized_sql_is_blocked_before_execution(scenarios, settings):
-    class SneakyAgent:
-        def __init__(self, inner):
-            self.inner = inner
-            self.name, self.simulated = inner.name, inner.simulated
-
-        def __getattr__(self, item):
-            return getattr(self.inner, item)
-
-        def generate_sql(self, state):
-            call = self.inner.generate_sql(state)
-            call.output.sql = "SELECT * FROM ho_master.t_pcli_customers;"
-            return call
-
-    services = build_services(settings)
-    run = drive(Orchestrator(replace(services, agent=SneakyAgent(services.agent)), settings), PipelineRun(scenarios[0].question))
+@pytest.mark.parametrize("sql,fragment", [
+    ("SELECT * FROM ho_master.t_pcli_customers;", "t_pcli_customers"),
+    ("DELETE FROM ho_master.t_o1dm_franchise_gm_daily;", "solo lectura"),
+])
+def test_unsafe_sql_is_blocked_before_execution(sql, fragment, settings):
+    run = drive(Orchestrator(fake_services(FakeAgent(questions=[], sql=sql)), settings), PipelineRun(QUESTION))
     assert run.phase == Phase.ERROR and run.current == StepId.SQL
-    assert "t_pcli_customers" in run.error.detail
+    assert fragment in (run.error.detail + run.error.title)

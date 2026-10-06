@@ -1,13 +1,12 @@
 """Modelos de dominio que comparten orquestación, servicios e interfaz.
 
 El IR es la clase original del agente (agents/ada_text2sql/semantic_ir.py).
-ClarificationDecision y SQLDraft replican campo a campo los modelos de salida
-de agents/ada_text2sql/agent.py, que no se puede importar sin las librerías de
-AWS; así el modo simulado produce exactamente las mismas estructuras.
+SQLDraft replica el modelo de salida de agents/ada_text2sql/agent.py, que no
+se puede importar sin las librerías de AWS.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Generic, TypeVar
 
@@ -45,15 +44,19 @@ class StepStatus(str, Enum):
 
 
 # ---------------------------------------------------------------------
-# Salidas del LLM (réplica de los modelos del agente)
+# Salidas del LLM
 # ---------------------------------------------------------------------
 
-class ClarificationDecision(BaseModel):
+class ClarificationBatch(BaseModel):
+    """Aclaraciones de una ronda: el agente puede hacer varias preguntas a la vez."""
+
     needs_clarification: bool
-    question: str | None = None
+    questions: list[str] = Field(default_factory=list)
 
 
 class SQLDraft(BaseModel):
+    """Réplica de SQLDraft de agents/ada_text2sql/agent.py."""
+
     sql: str
     assumptions: list[str] = Field(default_factory=list)
 
@@ -65,86 +68,60 @@ class AgentCall(Generic[T]):
     output: T
     input_tokens: int | None = None
     output_tokens: int | None = None
-    tokens_estimated: bool = False
     prompts: list[dict[str, str]] | None = None
-
-
-class ClarificationOption(BaseModel):
-    value: str
-    label: str
 
 
 # ---------------------------------------------------------------------
 # Paso 2 · RAG multinivel
 # ---------------------------------------------------------------------
 
-class FieldMatch(BaseModel):
+class FieldInfo(BaseModel):
     name: str
     label: str = ""
     description: str = ""
-    type: str = ""
-    role: str | None = None
-    values: list[str] = Field(default_factory=list)
-    score: float | None = None
-    selected: bool = False
-    entity_ids: list[str] = Field(default_factory=list)
 
 
-class TableMatch(BaseModel):
+class TableInfo(BaseModel):
+    """Tabla autorizada, leída del bloque de texto de authorized_tables."""
+
     name: str  # nombre completo: base.tabla
-    label: str = ""
     description: str = ""
-    score: float | None = None
-    selected: bool = False
-    fields: list[FieldMatch] = Field(default_factory=list)
+    fields: list[FieldInfo] = Field(default_factory=list)
 
     @property
     def short_name(self) -> str:
         return self.name.split(".")[-1]
 
 
-class OwnerMatch(BaseModel):
-    code: str
-    name: str
-    business_owner: str | None = None
-    score: float | None = None
-    selected: bool = False
-    tables: list[TableMatch] = Field(default_factory=list)
+class RAGCandidate(BaseModel):
+    """Una fila de la tabla de candidatos del RAG (una entidad del IR frente a una tabla)."""
 
-
-class EntitySearch(BaseModel):
-    """Traza de la búsqueda en tres niveles para una entidad del IR."""
-
-    entity_id: str
-    kind: str  # metric | dimension | attribute | filter | time_range
-    surface_form: str
-    entity: str
-    concept: str
-    owner: str | None = None
-    owner_score: float | None = None
-    table: str | None = None
-    table_score: float | None = None
-    field: str | None = None
-    field_score: float | None = None
-    candidates_seen: int = 0
+    entity: str = ""
+    type: str = ""
+    table: str = ""
+    meets_grain: bool | None = None
+    sim_uuaa: float | None = None
+    sim_table: float | None = None
+    sim_field: float | None = None
+    sim_weighted: float | None = None
 
 
 class RAGResult(BaseModel):
     source: str
     dialect: str
-    owners: list[OwnerMatch] = Field(default_factory=list)
-    searches: list[EntitySearch] = Field(default_factory=list)
-    selected_tables: list[str] = Field(default_factory=list)
+    candidates: list[RAGCandidate] = Field(default_factory=list)
+    unified: list[dict[str, Any]] = Field(default_factory=list)  # filas con los nombres de columna de pantalla
+    unified_derived: bool = False  # True si tu RAG no la aporta y se calcula aquí
+    tables: list[TableInfo] = Field(default_factory=list)
     authorized_tables: list[str] = Field(default_factory=list)  # bloques de texto en tu formato
-    schema_context: list[dict[str, Any]] = Field(default_factory=list)
+    schema_context: list[Any] = Field(default_factory=list)
     business_context: list[Any] = Field(default_factory=list)
     join_rules: list[Any] = Field(default_factory=list)
-    has_scores: bool = True
     raw_context: dict[str, Any] | None = None
 
     @property
-    def selected_field_count(self) -> int:
-        return sum(1 for o in self.owners for t in o.tables for f in t.fields if f.selected)
+    def selected_tables(self) -> list[str]:
+        return [t.name for t in self.tables]
 
 
 # ---------------------------------------------------------------------
@@ -255,26 +232,3 @@ class ExecutionResult:
     row_count: int
     truncated: bool = False
     executed_sql: str = ""
-    simulated: bool = True
-
-
-@dataclass
-class Kpi:
-    label: str
-    value: str
-    caption: str = ""
-
-
-@dataclass
-class ResultProfile:
-    """Lectura de la forma del resultado para elegir gráfico y KPIs."""
-
-    kind: str  # kpi | line | bar | table
-    x: str | None = None
-    y: str | None = None
-    series: str | None = None
-    measures: list[str] = field(default_factory=list)
-    categories: list[str] = field(default_factory=list)
-    times: list[str] = field(default_factory=list)
-    measure_kinds: dict[str, str] = field(default_factory=dict)  # currency | percent | count | number
-    descending: bool = True

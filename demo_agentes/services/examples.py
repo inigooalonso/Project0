@@ -1,7 +1,7 @@
-"""Preguntas de ejemplo para el modo real (data/real/examples.yaml).
+"""Preguntas de ejemplo (data/real/examples.yaml).
 
-A diferencia de los escenarios del mock, aquí solo hace falta la pregunta: el
-pseudocódigo, el SQL y el resultado los produce tu agente en tiempo de ejecución.
+Solo hace falta la pregunta: el pseudocódigo, la SQL y el resultado los produce
+tu agente en tiempo de ejecución.
 """
 from __future__ import annotations
 

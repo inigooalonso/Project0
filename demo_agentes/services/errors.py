@@ -1,8 +1,6 @@
 """Errores de servicio con mensaje apto para la audiencia.
 
-La interfaz muestra ``title`` y ``message``; ``detail`` solo aparece en la vista
-técnica. ``can_fallback`` indica si tiene sentido ofrecer «Continuar con datos
-simulados» para ese servicio.
+La interfaz muestra ``title`` y ``message``, y ``detail`` en un desplegable.
 """
 from __future__ import annotations
 
@@ -14,34 +12,16 @@ class ServiceError(Exception):
         title: str,
         message: str,
         detail: str = "",
-        can_fallback: bool = True,
     ) -> None:
         super().__init__(f"{service}: {title}. {detail}".strip())
         self.service = service  # agent | rag | executor | knowledge
         self.title = title
         self.message = message
         self.detail = detail
-        self.can_fallback = can_fallback
 
 
 class ServiceUnavailable(ServiceError):
     """El servicio real no se puede usar en este equipo (dependencias, credenciales, red)."""
-
-
-class UnsupportedQuestion(ServiceError):
-    """El agente simulado solo conoce las preguntas de ejemplo."""
-
-    def __init__(self, question: str) -> None:
-        super().__init__(
-            service="agent",
-            title="Pregunta fuera del guion de la demo",
-            message=(
-                "Con el LLM simulado, ADA responde a las preguntas de ejemplo. "
-                "Para preguntas libres, activa el LLM real (Bedrock) en «Ajustes de la demo»."
-            ),
-            detail=f"Pregunta recibida: {question}",
-            can_fallback=False,
-        )
 
 
 def describe_exception(exc: BaseException) -> str:

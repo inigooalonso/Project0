@@ -1,30 +1,21 @@
-"""Adaptador REAL del RAG: tu tool inject_query_context → retrieve_context_for_sql.
+"""Adaptador del RAG: tu tool inject_query_context → retrieve_context_for_sql.
 
-Contrato propuesto para que la vista pinte el árbol con puntuaciones: cada
-elemento de ``schema_context`` como
-    {"entity_id", "owner", "table", "field", "description", "score"}.
-Si tu RAG todavía no lo devuelve así (hoy devuelve el texto de
-``authorized_tables``), el adaptador construye el árbol a partir de ese texto,
-sin puntuaciones. El dialecto se fuerza al configurado (Athena).
+Lee del contexto que devuelve tu RAG:
+- ``authorized_tables``: bloques de texto con tu formato (tabla, descripción, campos);
+- ``rag_candidates`` y ``rag_unified``: tablas de similitud que se pintan en el
+  paso 2 (formato en services/rag/tables.py).
+El dialecto se fuerza al configurado (Athena).
 """
 from __future__ import annotations
 
 import json
-import re
 from typing import Any
 
-from core.models import EntitySearch, FieldMatch, OwnerMatch, Pydantic_SemanticQueryIR, RAGResult, TableMatch
+from core.models import FieldInfo, Pydantic_SemanticQueryIR, RAGResult, TableInfo
 from services.agent.langgraph_adapter import load_agent_module
 from services.errors import ServiceError, describe_exception
-from services.rag.base import ir_items
+from services.rag.tables import derive_unified, parse_candidates, parse_unified
 from services.watchdog import run_with_timeout
-
-UUAA = re.compile(r"(?:^|\.)t_([a-z0-9]{4})_", re.IGNORECASE)
-
-
-def owner_code(table: str) -> str:
-    match = UUAA.search(table)
-    return match.group(1).lower() if match else table.split(".")[0]
 
 
 def parse_table_block(block: str) -> dict[str, Any] | None:
@@ -58,7 +49,6 @@ def parse_table_block(block: str) -> dict[str, Any] | None:
 
 class AgentRAGAdapter:
     name = "Tu RAG · retrieve_context_for_sql"
-    simulated = False
 
     def __init__(self, module_path: str, dialect: str, timeout_s: float = 30.0) -> None:
         self.module_path = module_path
@@ -76,66 +66,31 @@ class AgentRAGAdapter:
         except Exception as exc:
             raise ServiceError("rag", "Tu RAG no ha respondido",
                                "La búsqueda de contexto ha fallado.", describe_exception(exc)) from exc
+        if not isinstance(context, dict):
+            raise ServiceError("rag", "Tu RAG no ha devuelto un contexto válido",
+                               "retrieve_context_for_sql debe devolver un diccionario.", str(raw)[:300])
+        return build_result(context, self.dialect, self.name)
 
-        original_dialect = context.get("dialect")
-        context["dialect"] = self.dialect
-        blocks = [b for b in context.get("authorized_tables", []) if isinstance(b, str)]
-        parsed = [t for t in (parse_table_block(b) for b in blocks) if t]
-        schema_items = [i for i in context.get("schema_context", []) if isinstance(i, dict) and i.get("table")]
-        has_scores = any(isinstance(i.get("score"), (int, float)) for i in schema_items)
 
-        owners: dict[str, OwnerMatch] = {}
-
-        def table_node(name: str, description: str = "") -> TableMatch:
-            code = owner_code(name)
-            owner = owners.setdefault(code, OwnerMatch(code=code, name=f"UUAA {code}", selected=True))
-            for t in owner.tables:
-                if t.name == name:
-                    return t
-            node = TableMatch(name=name, label=name.split(".")[-1], description=description, selected=True)
-            owner.tables.append(node)
-            return node
-
-        for t in parsed:
-            node = table_node(t["name"], t["description"])
-            node.fields = [FieldMatch(name=f["name"], label=f["label"], description=f["description"]) for f in t["fields"]]
-        for item in schema_items:
-            node = table_node(str(item["table"]))
-            if item.get("owner"):
-                owners[owner_code(node.name)].name = str(item["owner"])
-            score = item.get("score") if isinstance(item.get("score"), (int, float)) else None
-            existing = next((f for f in node.fields if f.name == item.get("field")), None)
-            if existing is None and item.get("field"):
-                existing = FieldMatch(name=str(item["field"]), description=str(item.get("description", "")))
-                node.fields.append(existing)
-            if existing is not None:
-                existing.selected = True
-                existing.score = max(existing.score or 0, score) if score is not None else existing.score
-                if item.get("entity_id"):
-                    existing.entity_ids.append(str(item["entity_id"]))
-            if score is not None:
-                node.score = max(node.score or 0, score)
-        for owner in owners.values():
-            scores = [t.score for t in owner.tables if t.score is not None]
-            owner.score = max(scores) if scores else None
-
-        searches = []
-        by_entity = {str(i.get("entity_id")): i for i in schema_items if i.get("entity_id")}
-        for item in ir_items(ir):
-            hit = by_entity.get(item.id)
-            searches.append(EntitySearch(
-                entity_id=item.id, kind=item.kind, surface_form=item.surface_form, entity=item.entity, concept=item.concept,
-                owner=owner_code(str(hit["table"])) if hit else None, table=str(hit["table"]) if hit else None,
-                field=str(hit.get("field")) if hit else None,
-                field_score=hit.get("score") if hit and isinstance(hit.get("score"), (int, float)) else None,
-            ))
-
-        selected_tables = [t.name for o in owners.values() for t in o.tables]
-        raw_context = dict(context, original_dialect=original_dialect)
-        return RAGResult(
-            source="agent", dialect=self.dialect, owners=list(owners.values()), searches=searches,
-            selected_tables=selected_tables, authorized_tables=list(context.get("authorized_tables", [])),
-            schema_context=list(context.get("schema_context", [])),
-            business_context=list(context.get("business_context", [])),
-            join_rules=list(context.get("join_rules", [])), has_scores=has_scores, raw_context=raw_context,
-        )
+def build_result(context: dict[str, Any], dialect: str, source: str) -> RAGResult:
+    original_dialect = context.get("dialect")
+    blocks = [b for b in context.get("authorized_tables", []) if isinstance(b, str)]
+    tables = []
+    for block in blocks:
+        parsed = parse_table_block(block)
+        if parsed:
+            tables.append(TableInfo(name=parsed["name"], description=parsed["description"],
+                                    fields=[FieldInfo(**f) for f in parsed["fields"]]))
+    candidates = parse_candidates(context)
+    unified = parse_unified(context)
+    derived = unified is None and bool(candidates)
+    if unified is None:
+        unified = derive_unified(candidates) if candidates else []
+    return RAGResult(
+        source=source, dialect=dialect, candidates=candidates, unified=unified, unified_derived=derived,
+        tables=tables, authorized_tables=blocks,
+        schema_context=list(context.get("schema_context") or []),
+        business_context=list(context.get("business_context") or []),
+        join_rules=list(context.get("join_rules") or []),
+        raw_context=dict(context, original_dialect=original_dialect, dialect=dialect),
+    )

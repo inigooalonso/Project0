@@ -10,26 +10,19 @@ from core.pipeline import Phase, PipelineRun
 from ui import runtime
 from ui.components import esc, pill
 
-SERVICE_LABELS = {"agent": "el LLM", "rag": "el RAG", "executor": "la ejecución", "knowledge": "joins y glosario",
-                  "context": "el contexto"}
 
-
-def stage_header(run: PipelineRun, step: StepId, technical: bool) -> None:
+def stage_header(run: PipelineRun, step: StepId) -> None:
     info = STEP_INFO[step]
     record = run.steps[step]
     meta = []
     if record.status == StepStatus.DONE:
         meta.append(pill(fmt_seconds(record.elapsed_s), "info"))
     elif record.status == StepStatus.WAITING:
-        meta.append(pill("En pausa · esperando respuesta", "warn"))
-    if record.simulated:
-        meta.append(pill("simulado", "mock", dot=True))
-    if technical:
-        if record.source:
-            meta.append(pill(record.source))
-        if record.input_tokens is not None:
-            approx = "≈ " if record.tokens_estimated else ""
-            meta.append(pill(f"{approx}{fmt_tokens(record.input_tokens)} → {fmt_tokens(record.output_tokens)} tokens"))
+        meta.append(pill("En pausa · esperando respuestas", "warn"))
+    if record.source:
+        meta.append(pill(record.source))
+    if record.input_tokens is not None:
+        meta.append(pill(f"{fmt_tokens(record.input_tokens)} → {fmt_tokens(record.output_tokens)} tokens"))
     st.html(
         f'<div class="ada-stage-head"><div><div class="num">Paso {info.number} de 7 · {esc(info.title)}</div>'
         f'<div class="title">{esc(info.stage_title)}</div><div class="what">{esc(info.what)}</div>'
@@ -37,23 +30,14 @@ def stage_header(run: PipelineRun, step: StepId, technical: bool) -> None:
     )
 
 
-def running_banner(run: PipelineRun):
-    """Banner del paso en curso. Devuelve el callback de progreso del orquestador."""
+def running_banner(run: PipelineRun) -> None:
+    """Banner del paso en curso."""
     info = STEP_INFO[run.current]
-    placeholder = st.empty()
-
-    def draw(lines: list[str] | None = None) -> None:
-        body = ""
-        if lines:
-            body = '<div class="lines">' + "".join(f"<div>{esc(line)}</div>" for line in lines[-6:]) + "</div>"
-        placeholder.html(
-            f'<div class="ada-running"><div class="title"><span class="ada-spinner"></span>'
-            f'Paso {info.number} de 7 · {esc(info.title)}</div><div class="text">{esc(info.what)}</div>{body}'
-            f'<div class="bar"></div></div>'
-        )
-
-    draw()
-    return draw
+    st.html(
+        f'<div class="ada-running"><div class="title"><span class="ada-spinner"></span>'
+        f'Paso {info.number} de 7 · {esc(info.title)}</div><div class="text">{esc(info.what)}</div>'
+        f'<div class="bar"></div></div>'
+    )
 
 
 def next_banner(run: PipelineRun) -> None:
@@ -71,22 +55,16 @@ def next_banner(run: PipelineRun) -> None:
                   help="También con la tecla AvPág o el mando de presentaciones")
 
 
-def error_card(run: PipelineRun, technical: bool) -> None:
+def error_card(run: PipelineRun) -> None:
     error = run.error
     if error is None:
         return
     st.html(f'<div class="ada-error"><div class="t">{esc(error.title)}</div><div class="m">{esc(error.message)}</div></div>')
-    cols = st.columns([0.3, 0.38, 0.32])
-    with cols[0]:
-        st.button("Reintentar", icon=":material/refresh:", width="stretch", on_click=runtime.retry, key="ada_retry")
-    with cols[1]:
-        if error.can_fallback and error.service in ("agent", "rag", "executor"):
-            st.button(f"Continuar con datos simulados ({SERVICE_LABELS[error.service]})", icon=":material/play_arrow:",
-                      type="primary", width="stretch", on_click=runtime.fallback_to_mock, args=(error.service,), key="ada_fallback")
-    with cols[2]:
-        st.button("Empezar de nuevo", icon=":material/restart_alt:", width="stretch", on_click=runtime.reset_run, key="ada_reset_err")
-    if technical and error.detail:
-        with st.expander("Detalle técnico"):
+    with st.container(horizontal=True, gap="small"):
+        st.button("Reintentar", icon=":material/refresh:", type="primary", on_click=runtime.retry, key="ada_retry")
+        st.button("Empezar de nuevo", icon=":material/restart_alt:", on_click=runtime.reset_run, key="ada_reset_err")
+    if error.detail:
+        with st.expander("Detalle técnico", expanded=True):
             st.code(error.detail, language="text", wrap_lines=True)
 
 
@@ -107,7 +85,7 @@ def welcome() -> None:
         '<div class="title">De la pregunta al dato, en 7 pasos visibles</div>'
         '<div class="what">Elige una pregunta de ejemplo o escribe la tuya. ADA mostrará cada paso que da hasta la respuesta: '
         'qué ha entendido, dónde están los datos, cómo se relacionan, qué recibe el LLM, si tiene dudas, '
-        'la SQL que escribe y el resultado.</div></div></div>'
+        'la SQL que escribe y el resultado de Athena.</div></div></div>'
     )
     cards = []
     for step in STEP_ORDER:

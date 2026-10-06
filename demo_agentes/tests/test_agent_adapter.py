@@ -1,11 +1,11 @@
-"""Modo real con tu código: los nodos de LangGraph se llaman a través del adaptador.
+"""Tu código a través de los adaptadores.
 
 El LLM de Bedrock se sustituye por un modelo falso de LangChain que devuelve
 JSON fijo, de modo que se ejecuta TU código (prompts, PydanticOutputParser,
-validate_read_only_sql, retrieve_context_for_sql) sin red ni credenciales.
+invoke_pydantic, validate_read_only_sql, retrieve_context_for_sql) sin red
+ni credenciales.
 """
 import json
-from dataclasses import replace
 
 import pytest
 
@@ -16,53 +16,74 @@ from langchain_core.language_models.fake_chat_models import FakeListChatModel  #
 
 from core.orchestrator import Orchestrator  # noqa: E402
 from core.pipeline import Phase, PipelineRun  # noqa: E402
-from services.agent.langgraph_adapter import LangGraphAgentAdapter, translate_agent_error  # noqa: E402
+from services.agent.langgraph_adapter import LangGraphAgentAdapter, translate_agent_error, unique_questions  # noqa: E402
 from services.errors import ServiceUnavailable  # noqa: E402
 from services.rag.agent_adapter import AgentRAGAdapter, parse_table_block  # noqa: E402
+from tests.fakes import CONTEXT, QUESTION, QUESTIONS, SAMPLE_IR, FakeExecutor, fake_services  # noqa: E402
 
 MODULE = "agents.ada_text2sql.agent"
+SQL = ("SELECT gf_crm_group_id, SUM(gf_franch_oper_rslt_amount) AS negocio "
+       "FROM ho_master.t_o1dm_franchise_gm_daily GROUP BY 1 ORDER BY 2 DESC LIMIT 1")
 
 
 @pytest.fixture
-def agent_module(monkeypatch, scenarios):
+def agent_module(monkeypatch):
     import importlib
 
     module = importlib.import_module(MODULE)
-    scenario = next(s for s in scenarios if s.id == "hipotecas_oficina")
     responses = [
-        json.dumps(scenario.semantic_ir, default=str, ensure_ascii=False),
-        json.dumps({"needs_clarification": False, "question": None}),
-        json.dumps({"sql": scenario.sql.strip(), "assumptions": ["supuesto de prueba"]}, ensure_ascii=False),
+        json.dumps(SAMPLE_IR, ensure_ascii=False),
+        json.dumps({"needs_clarification": True, "questions": [*QUESTIONS, QUESTIONS[0].upper()]}, ensure_ascii=False),
+        json.dumps({"needs_clarification": False, "questions": []}),
+        json.dumps({"sql": SQL, "assumptions": ["supuesto de prueba"]}, ensure_ascii=False),
     ]
     monkeypatch.setattr(module, "llm", FakeListChatModel(responses=responses))
     return module
 
 
-def test_real_adapter_runs_the_team_nodes_end_to_end(agent_module, scenarios, services, settings):
-    scenario = next(s for s in scenarios if s.id == "hipotecas_oficina")
-    real = replace(services, agent=LangGraphAgentAdapter(MODULE))
-    run = PipelineRun(scenario.question)
-    orchestrator = Orchestrator(real, settings.with_overrides(agent_mode="bedrock"))
+def test_adapter_runs_the_team_nodes_end_to_end(agent_module, settings):
+    from dataclasses import replace
+
+    services = replace(fake_services(), agent=LangGraphAgentAdapter(MODULE), rag=AgentRAGAdapter(MODULE, settings.dialect),
+                       executor=FakeExecutor())
+    orchestrator = Orchestrator(services, settings)
+    run = PipelineRun(QUESTION)
     for _ in range(20):
+        if run.phase == Phase.WAITING_USER:
+            # Varias preguntas a la vez; la repetida (mismo texto en mayúsculas) se descarta.
+            assert run.pending_questions == QUESTIONS
+            run.answer(["Margen", "Campo de franquicia"])
         if run.phase in (Phase.DONE, Phase.ERROR):
             break
         orchestrator.run_current_step(run)
     assert run.phase == Phase.DONE, run.error
     assert run.state["sql"].endswith(";")  # lo añade tu validate_read_only_sql
     assert run.state["assumptions"] == ["supuesto de prueba"]
-    prompts = run.steps[run.current].prompts or run.steps[list(run.steps)[0]].prompts
+    assert [c["answer"] for c in run.state["clarifications"]] == ["Margen", "Campo de franquicia"]
+    prompts = run.steps[list(run.steps)[0]].prompts
     assert prompts and any("JSON" in p["content"] for p in prompts)
-    assert run.execution.row_count == 10
 
 
-def test_real_rag_adapter_parses_the_current_stub_and_forces_athena(agent_module, scenarios):
-    adapter = AgentRAGAdapter(MODULE, "AWS Athena (Trino SQL)")
-    result = adapter.search(scenarios[0].ir())
+def test_rag_adapter_reads_your_stub_and_forces_athena(agent_module):
+    from core.models import Pydantic_SemanticQueryIR
+
+    result = AgentRAGAdapter(MODULE, "AWS Athena (Trino SQL)").search(Pydantic_SemanticQueryIR.model_validate(SAMPLE_IR))
     assert result.dialect == "AWS Athena (Trino SQL)"
     assert result.raw_context["original_dialect"] == "snowflake"
     assert result.selected_tables == ["ho_master.t_o1dm_franchise_gm_daily"]
-    assert result.owners[0].code == "o1dm" and not result.has_scores
-    assert len(result.owners[0].tables[0].fields) == 5
+    assert len(result.tables[0].fields) == 5 and result.candidates == []
+
+
+def test_rag_adapter_reads_candidate_tables(agent_module, monkeypatch):
+    from core.models import Pydantic_SemanticQueryIR
+
+    monkeypatch.setattr(agent_module, "retrieve_context_for_sql", lambda ir: CONTEXT)
+    result = AgentRAGAdapter(MODULE, "AWS Athena (Trino SQL)").search(Pydantic_SemanticQueryIR.model_validate(SAMPLE_IR))
+    assert len(result.candidates) == 3 and result.unified_derived
+
+
+def test_duplicate_questions_are_removed():
+    assert unique_questions(["¿A?", " ¿a? ", "", "¿B?"]) == ["¿A?", "¿B?"]
 
 
 def test_table_block_parser():
@@ -75,11 +96,11 @@ def test_aws_errors_become_presentable_messages():
     from botocore.exceptions import NoCredentialsError
 
     error = translate_agent_error(NoCredentialsError())
-    assert isinstance(error, ServiceUnavailable) and error.can_fallback
+    assert isinstance(error, ServiceUnavailable)
     assert "credenciales" in error.message.lower()
 
 
-def test_slow_real_service_times_out_with_a_presentable_error():
+def test_slow_service_times_out_with_a_presentable_error():
     import time
 
     from services.errors import ServiceError
@@ -87,4 +108,4 @@ def test_slow_real_service_times_out_with_a_presentable_error():
 
     with pytest.raises(ServiceError) as info:
         run_with_timeout(time.sleep, 2, timeout=0.2, service="agent", what="Amazon Bedrock")
-    assert info.value.can_fallback and "tardando" in info.value.title
+    assert "tardando" in info.value.title

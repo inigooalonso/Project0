@@ -1,12 +1,10 @@
-"""Similitud léxica determinista para el RAG y el glosario simulados.
+"""Similitud léxica determinista para emparejar el IR con el glosario (paso 3).
 
-Imita la puntuación de un buscador vectorial sin depender de modelos externos:
-normaliza el español (minúsculas, sin tildes, plural simple), mide qué parte de
+Normaliza el español (minúsculas, sin tildes, plural simple), mide qué parte de
 la consulta aparece en el documento y premia las frases clave completas.
 """
 from __future__ import annotations
 
-import hashlib
 import re
 import unicodedata
 from functools import lru_cache
@@ -77,23 +75,3 @@ def raw_similarity(query: str, keylabel: str, description: str, phrases: tuple[s
     """Similitud en [0, 1]: cobertura global, cobertura de etiqueta/sinónimos y frases."""
     full = f"{keylabel} {description}"
     return 0.40 * coverage(query, full) + 0.40 * coverage(query, keylabel) + 0.20 * phrase_hit(query, phrases)
-
-
-def display_score(raw: float, salt: str) -> float:
-    """Convierte la similitud a la escala habitual de un coseno de embeddings (≈0,40–0,95).
-
-    Añade una variación determinista de ±0,02 para que dos candidatos no
-    empaten de forma artificial.
-    """
-    digest = hashlib.sha1(salt.encode("utf-8")).digest()
-    jitter = (digest[0] / 255.0 - 0.5) * 0.04
-    return round(min(0.96, max(0.0, 0.38 + 0.56 * max(raw, 0.0) ** 1.3 + jitter)), 2)
-
-
-def best_similarity(queries: list[tuple[str, float]], keylabel: str, description: str, phrases: tuple[str, ...]) -> float:
-    """Máximo ponderado sobre varias formulaciones de la consulta."""
-    best = 0.0
-    for text, weight in queries:
-        if text and text.strip():
-            best = max(best, weight * raw_similarity(text, keylabel, description, phrases))
-    return best

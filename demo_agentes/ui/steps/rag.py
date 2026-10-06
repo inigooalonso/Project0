@@ -1,80 +1,83 @@
-"""Paso 2 · RAG multinivel: propietario → tabla → campo, con similitud."""
+"""Paso 2 · RAG multinivel: candidatos por entidad y tabla unificada.
+
+Las filas que no cumplen el grain se marcan en rojo en las dos tablas.
+"""
 from __future__ import annotations
 
 import pandas as pd
 import streamlit as st
 
 from core.pipeline import PipelineRun
-from services.rag.base import KIND_LABELS
-from ui.components import esc, tag
-from ui.graphs import rag_tree_dot
-from ui.theme import BORDER, CORE_BLUE, MEDIUM_BLUE, SKY, SURFACE_2
+from services.rag.tables import COLUMNS, GRAIN_LABEL, SCORE_LABELS, candidate_rows
+from ui.components import esc
+from ui.theme import ERROR, ERROR_BG
+
+KIND_LABELS = {"metric": "Métrica", "dimension": "Dimensión", "attribute": "Atributo", "filter": "Filtro",
+               "time_range": "Periodo"}
+COLUMN_ORDER = [label for label, _ in COLUMNS.values()]
 
 
-def _legend(technical: bool) -> str:
-    swatches = [(CORE_BLUE, "≥ 0,90"), (MEDIUM_BLUE, "0,80 – 0,90"), ("#9FD3F8", "0,70 – 0,80"), (SKY, "< 0,70")]
-    items = "".join(
-        f'<span style="display:inline-flex;align-items:center;gap:0.35rem;margin-right:1rem">'
-        f'<span style="width:0.9rem;height:0.9rem;border-radius:4px;background:{c}"></span>{esc(t)}</span>'
-        for c, t in swatches
-    )
-    if technical:
-        items += (f'<span style="display:inline-flex;align-items:center;gap:0.35rem"><span style="width:0.9rem;height:0.9rem;'
-                  f'border-radius:4px;background:{SURFACE_2};border:1px solid {BORDER}"></span>candidato descartado</span>')
-    return f'<div style="font-size:0.85rem;color:#46505C;margin:0.2rem 0 0.4rem 0"><b>Similitud</b> &nbsp; {items}</div>'
+def _grain_text(value) -> str:
+    if value is True:
+        return "Sí"
+    if value is False:
+        return "No"
+    return "—"
 
 
-def render(run: PipelineRun, technical: bool) -> None:
+def styled(rows: list[dict]) -> "pd.io.formats.style.Styler":
+    """Tabla con las similitudes a 2 decimales y en rojo las filas que no cumplen el grain."""
+    df = pd.DataFrame(rows)
+    ordered = [c for c in COLUMN_ORDER if c in df.columns] + [c for c in df.columns if c not in COLUMN_ORDER]
+    df = df[ordered]
+    if "Tipo" in df.columns:
+        df["Tipo"] = df["Tipo"].map(lambda v: KIND_LABELS.get(v, v))
+    fails = df[GRAIN_LABEL].map(lambda v: v is False).tolist() if GRAIN_LABEL in df.columns else [False] * len(df)
+    if GRAIN_LABEL in df.columns:
+        df[GRAIN_LABEL] = df[GRAIN_LABEL].map(_grain_text)
+
+    def paint(row: pd.Series) -> list[str]:
+        css = f"background-color: {ERROR_BG}; color: {ERROR}; font-weight: 600" if fails[row.name] else ""
+        return [css] * len(row)
+
+    scores = [c for c in SCORE_LABELS if c in df.columns]
+    return (df.style.apply(paint, axis=1)
+            .format({c: lambda v: "—" if v is None or pd.isna(v) else f"{v:.2f}".replace(".", ",") for c in scores}))
+
+
+def render(run: PipelineRun) -> None:
     rag = run.rag
-    owners = [o for o in rag.owners if o.selected]
-    st.html(
-        f'<p class="ada-understood">Ha buscado {len(rag.searches)} entidades del pseudocódigo en tres niveles '
-        f'(propietario, tabla y campo) y se queda con {len(rag.selected_tables)} tablas de {len(owners)} '
-        f'{"dominio" if len(owners) == 1 else "dominios"} de datos.</p>'
-    )
-    if not rag.has_scores:
-        st.info("Tu RAG todavía no devuelve puntuaciones: el árbol se construye a partir de las tablas autorizadas. "
-                "Ver el contrato propuesto en el README.", icon=":material/info:")
+    off_grain = sum(1 for c in rag.candidates if c.meets_grain is False)
+    sentence = (f"Ha evaluado {len(rag.candidates)} candidatos para las entidades del pseudocódigo "
+                f"y autoriza {len(rag.tables)} {'tabla' if len(rag.tables) == 1 else 'tablas'}.")
+    if not rag.candidates:
+        sentence = f"Tu RAG autoriza {len(rag.tables)} {'tabla' if len(rag.tables) == 1 else 'tablas'}."
+    st.html(f'<p class="ada-understood">{esc(sentence)}</p>')
+
+    st.html('<div class="ada-section">Candidatos por entidad</div>')
+    if rag.candidates:
+        st.dataframe(styled(candidate_rows(rag.candidates)), hide_index=True, width="stretch")
+        if off_grain:
+            st.html(f'<p style="color:{ERROR};font-size:0.9rem;margin:0.2rem 0 0 0">En rojo, '
+                    f'{off_grain} {"candidato que no cumple" if off_grain == 1 else "candidatos que no cumplen"} el grain.</p>')
     else:
-        st.html(_legend(technical))
-    st.graphviz_chart(rag_tree_dot(rag, show_candidates=technical, show_scores=technical), width="stretch")
+        st.info("Tu RAG todavía no devuelve la tabla de candidatos («rag_candidates» en el contexto). "
+                "Formato en el README.", icon=":material/info:")
 
-    if not technical:
-        st.html('<div class="ada-section">Dónde ha encontrado cada concepto</div>')
-        owner_names = {o.code: o.name for o in rag.owners}
-        table_labels = {t.name: t.label for o in rag.owners for t in o.tables}
-        field_labels = {(t.name, f.name): f.label for o in rag.owners for t in o.tables for f in t.fields}
-        rows = []
-        for s in rag.searches:
-            if not s.table:
-                continue
-            path = f"{owner_names.get(s.owner, s.owner)} › {table_labels.get(s.table, s.table)} › {field_labels.get((s.table, s.field), s.field)}"
-            rows.append(
-                f'<div style="display:flex;align-items:center;gap:0.8rem;margin:0.35rem 0">'
-                f'{tag(s.kind, KIND_LABELS.get(s.kind, s.kind), s.surface_form)}'
-                f'<span style="color:#9AA5B1;font-size:1.3rem">→</span>'
-                f'<span style="color:#072146;font-size:1.02rem">{esc(path)}</span></div>'
-            )
-        st.html("".join(rows))
-        return
+    st.html('<div class="ada-section">Tabla unificada</div>')
+    if rag.unified:
+        st.dataframe(styled(rag.unified), hide_index=True, width="stretch")
+        if rag.unified_derived:
+            st.caption("Tu RAG no aporta la tabla unificada («rag_unified»): se muestra el mejor candidato por entidad, "
+                       "primero los que cumplen el grain y después por similitud ponderada.")
+    else:
+        st.caption("Sin tabla unificada.")
 
-    st.html('<div class="ada-section">Puntuaciones por entidad</div>')
-    data = pd.DataFrame(
-        [
-            {
-                "Entidad": s.surface_form, "Tipo": KIND_LABELS.get(s.kind, s.kind),
-                "Propietario": s.owner, "Sim. propietario": s.owner_score,
-                "Tabla": (s.table or "").split(".")[-1], "Sim. tabla": s.table_score,
-                "Campo": s.field, "Sim. campo": s.field_score, "Candidatos": s.candidates_seen,
-            }
-            for s in rag.searches
-        ]
-    )
-    score_col = lambda label: st.column_config.ProgressColumn(label, min_value=0.0, max_value=1.0, format="%.2f")  # noqa: E731
-    st.dataframe(
-        data, hide_index=True, width="stretch",
-        column_config={"Sim. propietario": score_col("Sim. propietario"), "Sim. tabla": score_col("Sim. tabla"),
-                       "Sim. campo": score_col("Sim. campo")},
-    )
-    with st.expander("schema_context devuelto al agente"):
-        st.json(rag.schema_context, expanded=False)
+    if rag.tables:
+        st.html('<div class="ada-section">Tablas autorizadas</div>')
+        st.dataframe(
+            pd.DataFrame([{"Tabla": t.name, "Campos": len(t.fields), "Descripción": t.description} for t in rag.tables]),
+            hide_index=True, width="stretch",
+        )
+    with st.expander("Contexto devuelto por tu RAG (JSON)"):
+        st.json(rag.raw_context or {}, expanded=False)

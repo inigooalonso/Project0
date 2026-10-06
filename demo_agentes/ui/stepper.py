@@ -62,7 +62,5 @@ def _meta(record, status: StepStatus) -> str:
     if record is None or status == StepStatus.PENDING:
         return f'<div class="ada-step-meta">{STATUS_TEXT[status]}</div>'
     parts = [STATUS_TEXT[status] if status in (StepStatus.RUNNING, StepStatus.WAITING, StepStatus.ERROR) else fmt_seconds(record.elapsed_s)]
-    if record.simulated:
-        parts.append('<span class="sim">simulado</span>')
     summary = f'<span class="sum">{esc(record.summary)}</span>' if record.summary else ""
     return f'<div class="ada-step-meta">{" · ".join(parts)}{summary}</div>'

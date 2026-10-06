@@ -17,11 +17,11 @@ def test_schema_matches_the_one_shared_by_the_team():
     assert schema == EXPECTED_SCHEMA
 
 
-def test_every_scenario_ir_validates(scenarios):
-    for scenario in scenarios:
-        ir = scenario.ir()
-        assert ir.metrics, scenario.id
-        assert set(ir.result_grain) <= {d.id for d in ir.dimensions}
+def test_sample_ir_validates():
+    from tests.fakes import SAMPLE_IR
+
+    ir = Pydantic_SemanticQueryIR.model_validate(SAMPLE_IR)
+    assert ir.metrics and set(ir.result_grain) <= {d.id for d in ir.dimensions}
 
 
 def test_model_rejects_broken_references():

@@ -2,20 +2,14 @@
 
 Dashboard en Streamlit para presentar dos agentes de IA a la dirección:
 
-- **ADA · Text2SQL**: convierte una pregunta de negocio en SQL validada, la ejecuta y explica el resultado. El pipeline de 7 pasos se despliega paso a paso ante la audiencia.
+- **ADA · Text2SQL**: convierte una pregunta de negocio en SQL validada y la ejecuta en Athena. El pipeline de 7 pasos se despliega paso a paso ante la audiencia, siempre con el detalle técnico a la vista.
 - **Business Understanding**: agentic RAG para el contexto de negocio. Página «Próximamente» con la descripción y el flujo previsto.
 
-| Portada | ADA en curso |
-|---|---|
-| ![Portada](docs/img/portada.png) | ![Pipeline en curso](docs/img/ada_en_curso.png) |
-
-| Resultado | RAG multinivel | Aclaración |
-|---|---|---|
-| ![Resultado](docs/img/ada_resultado.png) | ![RAG](docs/img/ada_rag.png) | ![Aclaración](docs/img/ada_aclaracion.png) |
+Todo es real: tu agente LangGraph sobre Bedrock, tu RAG y Amazon Athena. No hay datos ni respuestas simulados.
 
 ## Arranque
 
-Requisitos: Python 3.11 o superior (probado en 3.13).
+Requisitos: Python 3.11 o superior (probado en 3.13) y credenciales de AWS (perfil o SSO) con acceso a Bedrock en eu-south-2 y a Athena.
 
 ```bash
 cd demo_agentes
@@ -27,158 +21,120 @@ streamlit run app.py
 
 Se abre en <http://localhost:8501>. Lanza siempre `streamlit run` desde `demo_agentes/`, porque ahí está `.streamlit/config.toml` con el tema.
 
-- **Datos simulados:** se generan la primera vez (unos 10 s) y se guardan en `data/mock/.cache/`. Los arranques siguientes tardan menos de un segundo.
-- **Sin red ni credenciales:** el modo simulado funciona sin conexión y no necesita AWS.
+Configuración (`config/settings.toml`):
 
-### Modo real (Bedrock, tu RAG, Athena)
+| Ajuste | Clave | Variable de entorno |
+|---|---|---|
+| Módulo de tu agente | `agent.module` | `ADA_AGENT_MODULE` |
+| Rondas de aclaración como máximo | `agent.max_clarification_rounds` (3) | — |
+| Preguntas por ronda como máximo | `agent.max_questions_per_round` (5) | — |
+| Dialecto, base de datos y workgroup | `[sql]` | — |
+| Tiempo máximo por servicio | `[timeouts]` | — |
+| Avance automático | `demo.autoplay` | `ADA_AUTOPLAY` (`false` = modo presentador) |
 
-```bash
-pip install -r requirements-aws.txt
-# Credenciales AWS (perfil o SSO) con acceso a Bedrock en eu-south-2 y a Athena
-ADA_AGENT=bedrock streamlit run app.py
+## Preguntas de ejemplo
+
+Los botones salen de `data/real/examples.yaml`. Solo hace falta la pregunta; tu agente genera el resto en el momento:
+
+```yaml
+examples:
+  - label: Negocio por mesa de Global Markets      # texto del botón (opcional)
+    icon: ":material/trending_up:"                 # opcional
+    question: ¿Qué mesa de Global Markets ha generado más negocio en la Franquicia de Distribución en 2026?
 ```
 
-Cada servicio se elige por separado:
+Los cambios en ese fichero se aplican al recargar la página. También se puede escribir cualquier pregunta en la caja de texto.
 
-| Servicio | `config/settings.toml` | Variable de entorno | Valores |
-|---|---|---|---|
-| LLM (pasos 1, 5 y 6) | `services.agent` | `ADA_AGENT` | `mock` · `bedrock` |
-| RAG (paso 2) | `services.rag` | `ADA_RAG` | `mock` · `agent` (tu `retrieve_context_for_sql`) |
-| Ejecución (paso 7) | `services.executor` | `ADA_EXECUTOR` | `mock` (DuckDB) · `athena` |
-| Ritmo de la animación | `demo.speed` | `ADA_SPEED` | `0` instantáneo · `1` realista |
-| Avance automático | `demo.autoplay` | `ADA_AUTOPLAY` | `true` · `false` (modo presentador) |
+## Los 7 pasos
 
-- **Durante la demo:** la barra lateral (plegada, flecha `»` arriba a la izquierda) permite cambiar todo lo anterior. Los servicios se fijan al lanzar cada pregunta; el avance y el ritmo cambian al momento.
-- **Combinación más probable para el directo:** LLM real con RAG y ejecución simulados. El LLM recibe el catálogo bancario sintético, escribe SQL sobre él y DuckDB la ejecuta de verdad, así que también funcionan preguntas libres.
+Tu código está en `agents/ada_text2sql/`, sin cambios de lógica. El orquestador no llama a `sql_agent_graph` de una sola vez: invoca tus nodos uno a uno para intercalar los pasos que no existen en el grafo, medir cada paso y pausar en `st.session_state`.
 
-## Cómo se conecta con tu código
-
-Tu código está en `agents/ada_text2sql/`, sin cambios de lógica:
-
-- `semantic_ir.py` es tu clase `Pydantic_SemanticQueryIR`, literal.
-- `agent.py` es tu grafo y tus nodos. Solo se ha añadido:
-  - la cabecera de imports;
-  - las comillas de cierre del string `table`, que llegó cortado en el fragmento.
-- `ejemplo_cli.py` es tu bloque de lanzamiento por terminal, movido aquí para que importar el módulo no ejecute el grafo ni pida `input()`. Se ejecuta con `python -m agents.ada_text2sql.ejemplo_cli`.
-- `prompts.py` contiene un **`prompt_semantic_ir_outbound` provisional**, redactado a partir de los comentarios del modelo. **Sustitúyelo por el tuyo.**
-
-El orquestador no llama a `sql_agent_graph` de una sola vez: invoca tus nodos uno a uno. Así puede intercalar los pasos que no existen en el grafo, medir cada paso y pausar en `st.session_state`.
-
-| Paso | Modo real (tu código) | Modo simulado |
+| Paso | Qué se ejecuta | Qué se ve |
 |---|---|---|
-| 1 Pseudocódigo | `parse_semantic_query` → `Pydantic_SemanticQueryIR` | IR guionizado (`data/mock/scenarios.yaml`) |
-| 2 RAG multinivel | `inject_query_context` → `retrieve_context_for_sql` | Búsqueda propietario → tabla → campo sobre `data/mock/catalog.yaml` |
-| 3 Joins y glosario | No existe en el grafo: maqueta con YAML definidos a mano | `data/mock/joins.yaml`, `data/mock/glossary.yaml` |
-| 4 Contexto | No existe: se monta el `context` exacto que reciben tus nodos | Igual |
-| 5 Aclaraciones | `decide_if_clarification_is_needed` | Guion por escenario |
-| 6 SQL | `generate_sql` (incluye tu `validate_read_only_sql`) | SQL guionizada en dialecto Athena |
-| 7 Ejecución | `wr.athena.read_sql_query(database="ho_master", workgroup="sandbox", ctas_approach=False)` | DuckDB con datos sintéticos; sqlglot traduce Athena → DuckDB |
+| 1 Pseudocódigo | `parse_semantic_query` → `Pydantic_SemanticQueryIR` | Frase de lo entendido, etiquetas, dudas (ámbar) y conceptos por resolver (rojo), JSON |
+| 2 RAG multinivel | `inject_query_context` → `retrieve_context_for_sql` | Tabla de candidatos, tabla unificada (en rojo lo que no cumple el grain) y tablas autorizadas |
+| 3 Joins y glosario | `data/real/joins.yaml` y `data/real/glossary.yaml`, definidos a mano | Grafo de joins y términos aplicados |
+| 4 Contexto | Se monta el `context` exacto que reciben tus nodos | Indicadores y el JSON enviado al LLM |
+| 5 Aclaraciones | Tu `invoke_pydantic` y tu `llm`, con todas las preguntas a la vez | Formulario con una respuesta por pregunta |
+| 6 SQL | `generate_sql` (incluye tu `validate_read_only_sql`) + validación con sqlglot | SQL, supuestos y validación |
+| 7 Ejecución | `wr.athena.read_sql_query(database="ho_master", workgroup="sandbox", ctas_approach=False)` | El DataFrame tal como lo devuelve Athena y la trazabilidad por paso |
 
-Detalles del paso a paso:
+### Paso 1 · Dudas y conceptos por resolver
 
-- **Pausa de `ask_user`:** tu `interrupt()` lo reproduce la máquina de estados (`core/pipeline.py`) con el mismo contrato: `clarifications = [{"question", "answer"}]` y un máximo de 3.
-- **Dialecto:** se fuerza a `AWS Athena (Trino SQL)` (`sql.dialect`). Tu `retrieve_context_for_sql` vigente devolvía `snowflake`.
-- **Tokens y prompts reales:** se capturan con un callback de LangChain registrado por variable de contexto. Es el mismo mecanismo que `get_usage_metadata_callback` y no requiere tocar tus nodos.
-- **Doble validación de la SQL:** antes de ejecutarla, sqlglot comprueba que es una única sentencia, de solo lectura y sobre tablas autorizadas. Es lo que sugiere el comentario de tu `validate_read_only_sql`.
+- **Duda detectada** (ámbar): cada elemento de `ambiguities`. El agente puede resolverla preguntando en el paso 5.
+- **Concepto por resolver** (rojo): los `unresolved_concepts`, términos que el agente no ha sabido mapear.
 
-### Contrato propuesto para el RAG real
+### Paso 2 · Tablas del RAG
 
-Para que el árbol del paso 2 muestre puntuaciones, cada elemento de `schema_context` debería tener esta forma:
+Tu `retrieve_context_for_sql` devuelve, además de lo que ya devolvía, dos listas de filas (por ejemplo, `df.to_dict("records")`):
 
-```json
-{"entity_id": "m1", "owner": "o1dm · Global Markets", "table": "ho_master.t_o1dm_franchise_gm_daily",
- "field": "gf_franch_oper_rslt_amount", "description": "importe franquicia resultado operacion", "score": 0.91}
+```python
+return {
+    "dialect": "...",
+    "authorized_tables": [...],
+    "schema_context": [...],
+    "business_context": [...],
+    "join_rules": [...],
+    # Una fila por entidad del IR y tabla candidata:
+    "rag_candidates": [
+        {"Entidad": "negocio", "Tipo": "metric", "Tabla": "ho_master.t_o1dm_franchise_gm_daily",
+         "Cumple Grain": True, "Sim. UUAA": 0.91, "Sim. Tabla": 0.88, "Sim. Campo": 0.79, "Sim. Ponderado": 0.85},
+    ],
+    # Tabla unificada final, con las columnas que quieras:
+    "rag_unified": [...],
+}
 ```
 
-Si no viene así, que es lo que pasa hoy, el adaptador (`services/rag/agent_adapter.py`) construye el árbol a partir del texto de `authorized_tables` (formato `-Description:` / `-Fields:`), sin puntuaciones. El propietario se deduce de la UUAA del nombre de la tabla (`t_o1dm_…` → `o1dm`).
+- **Nombres de columna:** se aceptan variantes (`Sim UUAA`, `sim_uuaa`, `cumple_grain`, `sim_weighted`…); el mapeo está en `services/rag/tables.py`.
+- **Grain:** «Cumple Grain» admite `True`/`False`, `1`/`0` o «Sí»/«No». Las filas que no lo cumplen se pintan en rojo en las dos tablas.
+- **Sin `rag_unified`:** la tabla unificada se calcula con el mejor candidato por entidad, primero los que cumplen el grain y después por similitud ponderada. La pantalla lo indica.
+- **Fuera del prompt:** estas dos tablas no se envían al LLM. Solo se pintan en pantalla.
+- **Dialecto:** se fuerza a `AWS Athena (Trino SQL)` (`sql.dialect`). Tu `retrieve_context_for_sql` vigente devuelve `snowflake`.
 
-### Joins y glosario definidos a mano
+### Paso 5 · Varias preguntas a la vez
 
-- **Catálogo simulado:** `data/mock/joins.yaml` y `data/mock/glossary.yaml`.
-- **Catálogo real:** `data/real/joins.yaml` y `data/real/glossary.yaml`, con ejemplos comentados (por ejemplo, la unión de `t_o1dm_franchise_gm_daily` con `t_nztg_trade_core_information` por ID de operación). Se usan en modo «Tu RAG».
+Tu nodo `decide_if_clarification_is_needed` pide «exactly one question», lo que obliga a ir pregunta → respuesta → pregunta, y el agente acaba repitiendo la misma duda con otras palabras. El paso 5 usa tu `invoke_pydantic` y tu `llm`, con el mismo mensaje de usuario (IR, contexto y respuestas previas), y pide la lista completa de preguntas de una vez (`services/agent/langgraph_adapter.py`). Tu código no se modifica.
 
-El paso 3 hace tres cosas:
-- busca el camino más corto entre las tablas encontradas y añade las intermedias como «tabla puente»;
-- incorpora los términos del glosario que aparecen en la pregunta;
-- detecta cuándo un mismo concepto tiene varias definiciones. Es lo que provoca, de forma natural, la aclaración de «morosidad».
+- **Duplicados:** el prompt prohíbe repetir o reformular preguntas, y el adaptador descarta las duplicadas.
+- **Respuestas:** se responden todas en un formulario. Las que se dejan en blanco se envían como «Sin respuesta» y el agente declara el supuesto que use. Hace falta responder al menos una.
+- **Contrato:** cada respuesta se guarda como en tu `ask_user`, `clarifications = [{"question", "answer"}]`, y `generate_sql` las recibe igual.
+- **Rondas:** tras responder, el agente vuelve a decidir, hasta `max_clarification_rounds` rondas.
 
-### Preguntas de ejemplo
+### Otros detalles
 
-`data/mock/scenarios.yaml` contiene las 4 preguntas de los botones:
-
-| Pregunta | Forma | Gráfico |
-|---|---|---|
-| Hipotecas por oficina | Ranking | Barras |
-| Saldo a la vista | Evolución | Líneas |
-| Gasto con tarjeta | Distribución | Barras |
-| Morosidad por oficina | Pregunta de aclaración | Barras |
-
-En la de morosidad, las dos definiciones dan un líder distinto: Almería · Paseo por tasa de mora y Sevilla · Triana por ratio de impagados.
-
-Para añadir una pregunta, copia un escenario y ajusta su IR, su SQL y sus supuestos. Los tests comprueban que el IR valida y que la SQL usa exactamente las tablas que encuentra el RAG.
-
-**Ejemplos reales.** Con el LLM en «Bedrock · tu agente», los botones salen de `data/real/examples.yaml`. Ahí solo va la pregunta (más `label` e `icon` opcionales): tu agente genera el IR, el SQL y el resultado en tiempo de ejecución contra Athena. Si el fichero está vacío, se siguen mostrando los ejemplos simulados. Los cambios en ese fichero se aplican al recargar la página. `data/mock/scenarios.yaml` solo sirve para el agente simulado, porque cada escenario lleva escrito su IR y su SQL.
+- **Tokens y prompts reales:** se capturan con un callback de LangChain registrado por variable de contexto (el mismo mecanismo que `get_usage_metadata_callback`), sin tocar tus nodos.
+- **Doble validación de la SQL:** antes de ejecutarla, sqlglot comprueba que es una única sentencia, de solo lectura y sobre tablas autorizadas.
+- **`prompts.py`:** contiene un `prompt_semantic_ir_outbound` **provisional**. Sustitúyelo por el tuyo.
+- **`ejemplo_cli.py`:** es tu bloque de lanzamiento por terminal (`python -m agents.ada_text2sql.ejemplo_cli`).
 
 ## Robustez en directo
 
-- **Errores de servicios reales:** cualquier error de un servicio real (credenciales, red, permisos, JSON inválido del LLM) se muestra como un mensaje cuidado con tres opciones:
-  - **Reintentar**;
-  - **Continuar con datos simulados**, solo para ese servicio;
-  - **Empezar de nuevo**.
-- **Límites de tiempo:** cada servicio real tiene un tiempo máximo de espera (`[timeouts]` en `settings.toml`). Pasado ese límite, se ofrece la misma salida.
+- **Errores:** cualquier error de un servicio (credenciales, red, permisos, JSON inválido del LLM, SQL bloqueada) se muestra como un mensaje cuidado con el detalle técnico y dos opciones: **Reintentar** o **Empezar de nuevo**.
+- **Límites de tiempo:** cada servicio tiene un tiempo máximo de espera (`[timeouts]`).
 - **Sin trazas:** nunca se ven trazas en pantalla (`showErrorDetails = "none"`), y la página tiene una red de seguridad final.
-- **Reruns:** el pipeline vive en `st.session_state`. Cambiar de vista, pulsar pasos del stepper o navegar entre páginas no lo reinicia.
-- **Preguntas libres en modo 100 % simulado:** muestran un aviso amable con los ejemplos, en lugar de un error.
-
-### Guion sugerido para la demo
-
-1. **Portada** (30 s): qué son los agentes y las cuatro garantías.
-2. **ADA, vista ejecutiva, «Hipotecas por oficina»:** la audiencia ve avanzar el stepper; termina en el resultado con indicadores, gráfico y explicación.
-3. **Vista técnica:** pulsa los pasos 1, 2, 4 y 6 del stepper (JSON validado, árbol con similitudes, contexto exacto enviado al LLM, SQL validada).
-4. **«Morosidad por oficina»:** el glosario muestra dos definiciones y el agente pregunta. Responde con un botón y el pipeline continúa desde el paso 5. Repite con la otra respuesta: cambia la oficina líder.
-5. **Business Understanding:** lo que viene.
-
-Consejos:
-
-- **Modo presentador:** desactiva «Avance automático» en la barra lateral. Cada paso espera a «Siguiente paso»; la tecla **AvPág** o el mando de presentaciones también avanzan.
-- **Antes de empezar:** abre la app una vez (calienta la caché) y ejecuta `pytest`.
-- **Zoom:** ajústalo en el navegador de la sala (80–90 % suele bastar en 1080p) para que el resultado quepa sin hacer scroll.
+- **Reruns:** el pipeline vive en `st.session_state`. Pulsar pasos del stepper o navegar entre páginas no lo reinicia.
+- **Modo presentador:** con `ADA_AUTOPLAY=false`, cada paso espera a «Siguiente paso». La tecla **AvPág** o el mando de presentaciones también avanzan.
 - **Cambios en el código:** reinicia `streamlit run`; Streamlit no recarga los módulos importados con la app en marcha.
 
 ## Estructura
 
 ```
 demo_agentes/
-├── app.py                     # entrada: navegación superior, tema y ajustes
-├── .streamlit/config.toml     # tema BBVA (Core Blue, Navy, Medium Blue…), sin trazas ni menú de desarrollo
-├── config/settings.toml       # mock/real por servicio, dialecto, límites de tiempo, ritmo
+├── app.py                     # entrada: navegación superior y tema
+├── .streamlit/config.toml     # tema BBVA, sin trazas ni menú de desarrollo
+├── config/settings.toml       # módulo del agente, aclaraciones, dialecto, límites de tiempo
 ├── app_pages/                 # INTERFAZ: portada, ADA, Business Understanding
-├── ui/                        # tema y CSS, stepper, vistas de cada paso, gráficos Plotly, diagramas Graphviz
-├── core/                      # ORQUESTACIÓN: máquina de estados, orquestador, narrativa, contexto, perfil del resultado
-├── services/                  # SERVICIOS: interfaces + implementaciones mock/real + factory.py
-│   ├── agent/                 #   scripted.py (mock) · langgraph_adapter.py (tus nodos) · capture.py
-│   ├── rag/                   #   mock.py (catálogo) · agent_adapter.py (tu retrieve_context_for_sql)
+├── ui/                        # tema y CSS, stepper, vistas de cada paso, diagramas Graphviz
+├── core/                      # ORQUESTACIÓN: máquina de estados, orquestador, narrativa, contexto
+├── services/                  # SERVICIOS: interfaces + adaptadores + factory.py
+│   ├── agent/                 #   langgraph_adapter.py (tus nodos) · capture.py (prompts y tokens)
+│   ├── rag/                   #   agent_adapter.py (tu retrieve_context_for_sql) · tables.py (tablas del paso 2)
 │   ├── knowledge/             #   joins y glosario en YAML
-│   └── executor/              #   duckdb_mock.py · athena.py (awswrangler)
-├── data/                      # catálogo, escenarios, joins y glosario (mock y real), generador sintético
+│   └── executor/              #   athena.py (awswrangler)
+├── data/real/                 # examples.yaml, joins.yaml, glossary.yaml
 ├── agents/ada_text2sql/       # tu código
-└── tests/                     # 42 tests: esquema IR, coherencia entre pasos, máquina de estados, adaptador real, app
+└── tests/                     # tests con dobles de prueba (tests/fakes.py)
 ```
-
-La interfaz solo habla con `core/` y `services/factory.py`. Para sustituir un mock por un servicio real, basta con implementar la interfaz de `services/*/base.py` y registrarla en `factory.py`.
-
-## Datos simulados
-
-El generador es determinista, con semilla fija (`data/synthetic.py`). Produce un banco minorista con 9 tablas en `ho_master`, nombradas con la convención de tu tabla real (`t_{uuaa}_…`, `gf_…`):
-
-| Volumen | Contenido |
-|---|---|
-| 62 oficinas | 7 direcciones territoriales |
-| 30.000 clientes | 41.000 cuentas y 33.000 tarjetas |
-| 55.000 préstamos | Con 800.000 fotos mensuales de impagos |
-| ~2,7 M de filas en total | Incluye 813.000 saldos mensuales, 300.000 movimientos y 600.000 compras con tarjeta |
-
-El último cierre es el 30/09/2026 y hay 24 meses de historia. Las cifras están calibradas para resultar creíbles, por ejemplo una tasa de mora global del 2,2 %. No proceden de datos reales.
 
 ## Tests
 
@@ -187,14 +143,9 @@ cd demo_agentes
 pytest
 ```
 
-Los tests cubren:
+Los tests no necesitan red ni credenciales:
 
+- **Dobles de prueba:** `tests/fakes.py` tiene los mismos contratos que tu agente, tu RAG y Athena. Se usan para la máquina de estados (aclaraciones en lote, límites, modo presentador, errores, SQL bloqueada) y para la app completa con `streamlit.testing.AppTest`.
+- **Tu código:** se ejecuta con un LLM falso de LangChain: tus nodos, tu `invoke_pydantic`, tu `validate_read_only_sql` y tu `retrieve_context_for_sql`.
+- **Tablas del RAG:** variantes de nombres de columna, lectura del grain y tabla unificada.
 - **Esquema:** el esquema del IR es idéntico al compartido por el equipo.
-- **Datos:** las tablas de DuckDB coinciden campo a campo con el catálogo.
-- **Coherencia entre pasos:** RAG → joins → SQL → resultado en los 4 escenarios.
-- **Validación SQL:** detección de escrituras y de tablas no autorizadas.
-- **Máquina de estados:** pausa y reanudación, modo presentador, fallo de un servicio con continuación en simulado.
-- **Adaptador real:** se prueba con un LLM falso de LangChain, de modo que se ejecutan tus nodos y tu `validate_read_only_sql` sin red.
-- **App:** la aplicación completa con `streamlit.testing.AppTest`.
-
-Sin `requirements-aws.txt` instalado, los tests del modo real se omiten.

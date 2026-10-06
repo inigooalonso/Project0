@@ -1,17 +1,10 @@
-"""Tema visual: tokens de la paleta BBVA, CSS propio y plantilla de Plotly.
+"""Tema visual: tokens de la paleta BBVA y CSS propio.
 
 El tema base (colores, radios, tipografía) está en .streamlit/config.toml. Aquí
 solo va lo que Streamlit no cubre: tarjetas, etiquetas, stepper y cabeceras.
-
-Paleta categórica de gráficos validada con el validador de daltonismo
-(OKLab, Machado 2009) sobre fondo blanco: azul medio, naranja, aqua oscuro,
-violeta, mostaza y rosa. Naranja y mostaza quedan por debajo de 3:1 de
-contraste: siempre llevan etiqueta visible o tabla.
 """
 from __future__ import annotations
 
-import plotly.graph_objects as go
-import plotly.io as pio
 import streamlit as st
 
 NAVY = "#072146"
@@ -42,12 +35,6 @@ WARNING_BG = "#FDF4DA"
 ERROR = "#B92A45"
 ERROR_BG = "#FCEBEE"
 
-CATEGORICAL = [MEDIUM_BLUE, ORANGE, DARK_AQUA, VIOLET, MUSTARD, PINK]
-EMPHASIS = CORE_BLUE
-DEEMPHASIS = "#A9C9E8"
-# Rampa secuencial azul (claro → oscuro) para puntuaciones de similitud.
-SEQUENTIAL = ["#EEF6FD", "#D4EDFC", "#9FD3F8", "#5BBEFF", "#1973B8", "#004481"]
-
 FONT_STACK = '"Source Sans Pro", "Source Sans 3", "Source Sans", system-ui, -apple-system, "Segoe UI", sans-serif'
 
 # Colores de las etiquetas del IR (identidad por texto + punto de color).
@@ -59,19 +46,6 @@ KIND_COLORS = {
     "time_range": (MUSTARD, "#FBF4E0"),
     "order": (MUTED, "#F1F3F5"),
 }
-
-
-def score_color(score: float | None) -> tuple[str, str]:
-    """(relleno, texto) de un nodo según su puntuación de similitud."""
-    if score is None:
-        return SURFACE_2, TEXT_2
-    if score >= 0.90:
-        return CORE_BLUE, "#FFFFFF"
-    if score >= 0.80:
-        return MEDIUM_BLUE, "#FFFFFF"
-    if score >= 0.70:
-        return "#9FD3F8", NAVY
-    return SKY, NAVY
 
 
 CSS = f"""
@@ -105,8 +79,6 @@ h1, h2, h3, h4 {{ color: var(--ada-navy); letter-spacing: -0.01em; }}
 .ada-pill {{ display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.22rem 0.7rem; border-radius: 999px;
   font-size: 0.82rem; font-weight: 600; border: 1px solid var(--ada-border); color: var(--ada-text-2); background: #fff; white-space: nowrap; }}
 .ada-pill .dot {{ width: 0.5rem; height: 0.5rem; border-radius: 50%; background: #B5BDC7; }}
-.ada-pill.mock .dot {{ background: {MUSTARD}; }}
-.ada-pill.live .dot {{ background: {SUCCESS}; }}
 .ada-pill.ok {{ color: {SUCCESS}; background: {SUCCESS_BG}; border-color: transparent; }}
 .ada-pill.warn {{ color: {WARNING}; background: {WARNING_BG}; border-color: transparent; }}
 .ada-pill.err {{ color: {ERROR}; background: {ERROR_BG}; border-color: transparent; }}
@@ -187,11 +159,19 @@ div[data-testid="stColumn"]:has(.st-key-ada_stepper) {{ position: sticky; top: 4
 [class*="st-key-stp_"][class*="_sel"] {{ box-shadow: 0 0 0 2px var(--ada-blue-2) inset; }}
 .ada-step-meta {{ font-size: 0.8rem; color: var(--ada-muted); padding-left: 1.85rem; line-height: 1.35; }}
 .ada-step-meta .sum {{ color: var(--ada-text-2); display: block; font-size: 0.86rem; }}
-.ada-step-meta .sim {{ color: {WARNING}; font-weight: 600; }}
 
 /* Ejemplos y barra de pregunta */
 .st-key-ada_examples button {{ border-radius: 999px; border-color: #C9DCEE; background: var(--ada-sky-soft); color: var(--ada-blue); font-weight: 600; }}
 .st-key-ada_examples button:hover {{ border-color: var(--ada-blue-2); color: var(--ada-navy); }}
+
+/* Aclaraciones: varias preguntas por ronda */
+.ada-q {{ display: flex; gap: 0.7rem; align-items: flex-start; margin: 0.9rem 0 0.35rem 0; }}
+.ada-q .n {{ flex: none; width: 1.7rem; height: 1.7rem; border-radius: 50%; background: var(--ada-blue); color: #fff;
+  font-weight: 700; font-size: 0.9rem; display: flex; align-items: center; justify-content: center; }}
+.ada-q .t {{ color: var(--ada-navy); font-size: 1.02rem; line-height: 1.45; }}
+.ada-round {{ border: 1px solid var(--ada-border); border-radius: 14px; padding: 0.4rem 1.1rem 0.9rem 1.1rem; margin-bottom: 0.8rem; background: #fff; }}
+.ada-round .h {{ font-size: 0.8rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ada-blue-2); margin-top: 0.6rem; }}
+.ada-round .a {{ margin: 0.2rem 0 0 2.4rem; color: var(--ada-text-2); border-left: 3px solid var(--ada-sky); padding-left: 0.7rem; }}
 
 /* Tarjeta de error elegante */
 .ada-error {{ border: 1px solid #F2C4CD; background: {ERROR_BG}; border-radius: 14px; padding: 1rem 1.2rem; margin-bottom: 0.8rem; }}
@@ -224,23 +204,3 @@ div[data-testid="stColumn"]:has(.st-key-ada_stepper) {{ position: sticky; top: 4
 
 def inject_css() -> None:
     st.html(CSS)
-
-
-def register_plotly_template() -> None:
-    if "ada" in pio.templates:
-        return
-    pio.templates["ada"] = go.layout.Template(
-        layout=go.Layout(
-            font=dict(family=FONT_STACK, size=15, color=TEXT),
-            paper_bgcolor="rgba(0,0,0,0)",
-            plot_bgcolor="rgba(0,0,0,0)",
-            colorway=CATEGORICAL,
-            separators=",.",
-            margin=dict(l=8, r=24, t=16, b=8),
-            hoverlabel=dict(bgcolor="#FFFFFF", bordercolor=BORDER, font=dict(family=FONT_STACK, size=14, color=TEXT)),
-            xaxis=dict(showgrid=False, zeroline=False, linecolor="#C9D1DB", ticks="", tickfont=dict(color=TEXT_2, size=13)),
-            yaxis=dict(showgrid=True, gridcolor=GRID, gridwidth=1, zeroline=False, linecolor="#C9D1DB",
-                       tickfont=dict(color=TEXT_2, size=13)),
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0, font=dict(size=13, color=TEXT_2)),
-        )
-    )

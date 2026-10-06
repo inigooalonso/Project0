@@ -1,6 +1,8 @@
-# Glosario de negocio DEFINIDO A MANO para el catálogo REAL (modo «Tu RAG»).
+# Glosario de negocio DEFINIDO A MANO (paso 3 · Joins y glosario).
 #
-# Mismo formato que data/mock/glossary.yaml. Ejemplo a revisar con negocio
+# Se incorporan los términos cuyo nombre o sinónimos aparecen en el IR.
+# Campos: term, synonyms, definition, formula (opcional) y fields
+# (base.tabla.campo). Ejemplo a revisar con negocio
 # (usa un campo real de t_o1dm_franchise_gm_daily):
 #
 #  - term: Resultado de la franquicia

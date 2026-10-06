@@ -34,7 +34,7 @@ STEP_INFO: dict[StepId, StepInfo] = {
     ),
     StepId.RAG: StepInfo(
         2, "RAG multinivel", "Dónde están los datos", ":material/account_tree:",
-        "Para cada entidad detectada busca en el catálogo en tres niveles: propietario, tabla y campo.",
+        "Para cada entidad detectada busca en el catálogo en tres niveles (UUAA, tabla y campo) y comprueba el grain.",
         "Solo trabaja con datos catalogados y sabe con qué confianza encontró cada uno.",
     ),
     StepId.JOINS: StepInfo(
@@ -49,7 +49,7 @@ STEP_INFO: dict[StepId, StepInfo] = {
     ),
     StepId.CLARIFY: StepInfo(
         5, "Aclaraciones", "Dudas antes de seguir", ":material/forum:",
-        "El LLM decide si la pregunta es ambigua. Si lo es, pregunta y espera la respuesta.",
+        "El LLM decide si la pregunta es ambigua. Si lo es, hace todas sus preguntas a la vez y espera las respuestas.",
         "Ante la duda, pregunta: evita respuestas plausibles pero equivocadas.",
     ),
     StepId.SQL: StepInfo(
@@ -59,8 +59,8 @@ STEP_INFO: dict[StepId, StepInfo] = {
     ),
     StepId.EXECUTE: StepInfo(
         7, "Ejecución", "Resultado", ":material/insights:",
-        "Ejecuta la consulta y presenta el resultado con sus indicadores y el gráfico más adecuado.",
-        "De la pregunta al dato en segundos, con la trazabilidad completa.",
+        "Ejecuta la consulta en Athena y muestra el resultado tal como lo devuelve la base de datos.",
+        "De la pregunta al dato, con la trazabilidad completa.",
     ),
 }
 
@@ -143,10 +143,13 @@ def summary_pseudocode(ir: Pydantic_SemanticQueryIR) -> str:
 
 
 def summary_rag(rag: RAGResult) -> str:
-    owners = sum(1 for o in rag.owners if o.selected)
-    tables = len(rag.selected_tables)
-    fields = rag.selected_field_count
-    return f"{_plural(owners, 'dominio', 'dominios')} · {_plural(tables, 'tabla', 'tablas')} · {_plural(fields, 'campo', 'campos')}"
+    parts = [_plural(len(rag.tables), "tabla", "tablas")]
+    if rag.candidates:
+        parts.append(_plural(len(rag.candidates), "candidato", "candidatos"))
+        off = sum(1 for c in rag.candidates if c.meets_grain is False)
+        if off:
+            parts.append(_plural(off, "sin grain", "sin grain"))
+    return " · ".join(parts)
 
 
 def summary_joins(knowledge: KnowledgeResult) -> str:
@@ -160,12 +163,14 @@ def summary_context(bundle: ContextBundle) -> str:
     return f"{_plural(bundle.table_count, 'tabla autorizada', 'tablas autorizadas')} · ≈ {fmt_tokens(bundle.total_tokens)} tokens"
 
 
-def summary_clarify(n_answers: int, waiting: bool) -> str:
+def summary_clarify(run, waiting: bool) -> str:
     if waiting:
-        return "Esperando tu respuesta"
-    if n_answers == 0:
+        n = len(run.rounds[-1].questions)
+        return "Esperando " + ("tu respuesta" if n == 1 else f"{n} respuestas")
+    answered = len(run.state.get("clarifications", []))
+    if answered == 0:
         return "Sin dudas: no hace falta preguntar"
-    return _plural(n_answers, "aclaración resuelta", "aclaraciones resueltas")
+    return _plural(answered, "aclaración resuelta", "aclaraciones resueltas")
 
 
 def summary_sql(result: SQLResult) -> str:
@@ -178,11 +183,3 @@ def summary_sql(result: SQLResult) -> str:
 
 def summary_execute(result: ExecutionResult) -> str:
     return f"{_plural(result.row_count, 'fila', 'filas')} en {fmt_seconds(result.elapsed_s)}"
-
-
-def explanation_from_ir(ir: Pydantic_SemanticQueryIR, assumptions: list[str]) -> str:
-    """Explicación genérica cuando el agente real no la aporta."""
-    text = f"He interpretado la pregunta así: {describe_ir(ir)[0].lower()}{describe_ir(ir)[1:]}"
-    if assumptions:
-        text += " Supuestos: " + " ".join(a if a.endswith(".") else a + "." for a in assumptions)
-    return text

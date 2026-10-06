@@ -20,7 +20,7 @@ OPERATORS = {"eq": "=", "neq": "≠", "gt": ">", "gte": "≥", "lt": "<", "lte":
              "exists": "existe", "not_exists": "no existe"}
 
 
-def render(run: PipelineRun, technical: bool) -> None:
+def render(run: PipelineRun) -> None:
     ir = run.state["semantic_ir"]
     st.html(f'<p class="ada-question">«{esc(run.question)}»</p><p class="ada-understood">{esc(describe_ir(ir))}</p>')
 
@@ -44,16 +44,16 @@ def render(run: PipelineRun, technical: bool) -> None:
     st.html(f'<div style="margin-bottom:0.3rem">{pill("Intención: " + INTENT_LABELS.get(ir.intent.value, ir.intent.value), "info")}</div>')
     tags(items)
 
-    doubts = list(ir.unresolved_concepts) + list(ir.ambiguities)
-    if doubts:
-        warnings = "".join(f'<div style="margin-top:0.35rem">{pill("Duda detectada: " + d, "warn")}</div>' for d in ir.ambiguities)
-        unresolved = ", ".join(f"«{c}»" for c in ir.unresolved_concepts)
-        if unresolved:
-            warnings += f'<div style="margin-top:0.35rem">{pill("Concepto por resolver: " + unresolved, "warn")}</div>'
-        st.html(f'<div style="margin-top:0.6rem">{warnings}</div>')
+    # Duda detectada (ámbar): ambigüedad que el agente puede resolver preguntando.
+    # Concepto por resolver (rojo): término que no ha sabido mapear a ningún concepto.
+    notes = "".join(f'<div style="margin-top:0.35rem">{pill("Duda detectada: " + d, "warn")}</div>' for d in ir.ambiguities)
+    unresolved = ", ".join(f"«{c}»" for c in ir.unresolved_concepts)
+    if unresolved:
+        notes += f'<div style="margin-top:0.35rem">{pill("Concepto por resolver: " + unresolved, "err")}</div>'
+    if notes:
+        st.html(f'<div style="margin-top:0.6rem">{notes}</div>')
 
-    if technical:
-        st.html('<div class="ada-section">IR semántico · JSON validado con <code>Pydantic_SemanticQueryIR</code></div>')
-        st.code(json.dumps(ir.model_dump(mode="json"), indent=2, ensure_ascii=False), language="json", height=360)
-        st.caption("Validación del modelo: campos obligatorios, enumerados, IDs únicos y referencias entre métricas, "
-                   "dimensiones, atributos, periodo y orden. ✓")
+    st.html('<div class="ada-section">IR semántico · JSON validado con <code>Pydantic_SemanticQueryIR</code></div>')
+    st.code(json.dumps(ir.model_dump(mode="json"), indent=2, ensure_ascii=False), language="json", height=360)
+    st.caption("Validación del modelo: campos obligatorios, enumerados, IDs únicos y referencias entre métricas, "
+               "dimensiones, atributos, periodo y orden. ✓")
