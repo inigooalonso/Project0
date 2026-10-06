@@ -1,0 +1,40 @@
+# Configuración de la demo. Cada valor se puede sobrescribir con una variable
+# de entorno (entre paréntesis) y, durante la demo, desde «Ajustes de la demo»
+# en la barra lateral.
+
+[services]
+# Pasos 1, 5 y 6 (pseudocódigo, aclaraciones y SQL): "mock" | "bedrock"   (ADA_AGENT)
+agent = "mock"
+# Paso 2 (RAG multinivel): "mock" | "agent" = tu retrieve_context_for_sql  (ADA_RAG)
+rag = "mock"
+# Paso 7 (ejecución): "mock" = DuckDB con datos simulados | "athena"       (ADA_EXECUTOR)
+executor = "mock"
+
+[agent]
+# Módulo con tus nodos (parse_semantic_query, inject_query_context,
+# decide_if_clarification_is_needed, generate_sql).                       (ADA_AGENT_MODULE)
+module = "agents.ada_text2sql.agent"
+# Mismo límite que tu nodo decide_if_clarification_is_needed.
+max_clarifications = 3
+
+[sql]
+# Dialecto que se fuerza en el contexto enviado al LLM.
+dialect = "AWS Athena (Trino SQL)"
+# Dialecto de lectura para sqlglot (validación y traducción a DuckDB).
+sqlglot_dialect = "athena"
+database = "ho_master"
+workgroup = "sandbox"
+# Filas máximas que se muestran en pantalla.
+max_rows = 500
+
+[timeouts]
+# Segundos máximos de espera a cada servicio real antes de ofrecer continuar en simulado.
+llm = 60
+rag = 30
+executor = 120
+
+[demo]
+# Multiplicador de las latencias simuladas: 0 = instantáneo, 1 = realista. (ADA_SPEED)
+speed = 1.0
+# true = el pipeline avanza solo; false = modo presentador (botón «Siguiente paso»). (ADA_AUTOPLAY)
+autoplay = true

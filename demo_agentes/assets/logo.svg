@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="236" height="40" viewBox="0 0 236 40" role="img" aria-label="Agentes de IA">
+  <rect x="0" y="2" width="36" height="36" rx="9" fill="#004481"/>
+  <circle cx="11" cy="26" r="3.6" fill="#ffffff"/>
+  <circle cx="25" cy="26" r="3.6" fill="#ffffff"/>
+  <circle cx="18" cy="13" r="3.6" fill="#5BBEFF"/>
+  <path d="M11 26 L18 13 L25 26 Z" fill="none" stroke="#ffffff" stroke-width="1.8" stroke-linejoin="round"/>
+  <text x="48" y="27" font-family="Helvetica, Arial, sans-serif" font-size="19" font-weight="700" fill="#072146">Agentes de IA</text>
+  <text x="182" y="27" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="600" fill="#1973B8">· demo</text>
+</svg>

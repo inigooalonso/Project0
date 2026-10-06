@@ -1,0 +1,10 @@
+# Demo en modo simulado (funciona sin red ni credenciales). Python 3.11+.
+streamlit>=1.65,<2
+plotly>=6.0,<8
+pandas>=2.2
+numpy>=1.26
+pydantic>=2.7,<3
+pyyaml>=6.0
+duckdb>=1.1,<2      # motor SQL embebido: ejecuta de verdad la SQL sobre los datos simulados
+sqlglot>=25.0       # valida la SQL (solo lectura, tablas autorizadas) y la traduce de Athena a DuckDB
+pytest>=8.0         # tests (opcional en la máquina de la demo)

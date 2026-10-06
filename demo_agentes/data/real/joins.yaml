@@ -1,0 +1,14 @@
+# Reglas de join DEFINIDAS A MANO para el catálogo REAL (modo «Tu RAG»).
+#
+# Mismo formato que data/mock/joins.yaml. Se usan cuando el RAG real devuelve
+# tablas de ho_master. Ejemplo (la descripción de t_o1dm_franchise_gm_daily
+# indica que se integra por ID de operación con t_nztg_trade_core_information;
+# sustituye <campo_id_operacion> por el nombre físico real):
+#
+#  - left: ho_master.t_o1dm_franchise_gm_daily.<campo_id_operacion>
+#    right: ho_master.t_nztg_trade_core_information.<campo_id_operacion>
+#    type: LEFT
+#    cardinality: "N:1"
+#    description: Completa la información de las operaciones que no proceden de Analítica.
+
+joins: []

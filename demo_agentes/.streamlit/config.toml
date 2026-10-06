@@ -1,0 +1,42 @@
+# Tema y comportamiento de la demo. Paleta corporativa BBVA.
+
+[server]
+headless = true
+runOnSave = false
+
+[browser]
+gatherUsageStats = false
+
+[client]
+# Oculta el menú de desarrollador y el botón de despliegue.
+toolbarMode = "minimal"
+# Nunca se muestran trazas en pantalla (solo en la consola).
+showErrorDetails = "none"
+showSidebarNavigation = false
+
+[theme]
+base = "light"
+primaryColor = "#004481"          # Core Blue
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F5F7FA"
+textColor = "#121212"
+linkColor = "#1973B8"             # Medium Blue
+borderColor = "#E1E6EC"
+showWidgetBorder = true
+baseRadius = "0.6rem"
+baseFontSize = 16
+headingFontSizes = ["2.2rem", "1.6rem", "1.3rem"]
+codeBackgroundColor = "#F5F7FA"
+blueColor = "#1973B8"
+greenColor = "#2E7D45"
+orangeColor = "#F7893B"
+yellowColor = "#D8A013"
+redColor = "#B92A45"
+violetColor = "#8F7AE5"
+dataframeHeaderBackgroundColor = "#F5F7FA"
+# Paleta categórica validada (daltonismo y contraste) sobre fondo blanco.
+chartCategoricalColors = ["#1973B8", "#F7893B", "#02A5A5", "#8F7AE5", "#D8A013", "#E06290"]
+
+[theme.sidebar]
+backgroundColor = "#F5F7FA"
+secondaryBackgroundColor = "#FFFFFF"

@@ -1,0 +1,13 @@
+# Glosario de negocio DEFINIDO A MANO para el catálogo REAL (modo «Tu RAG»).
+#
+# Mismo formato que data/mock/glossary.yaml. Ejemplo a revisar con negocio
+# (usa un campo real de t_o1dm_franchise_gm_daily):
+#
+#  - term: Resultado de la franquicia
+#    synonyms: [negocio generado, resultado de la operación, ingresos de la franquicia]
+#    definition: Importe del resultado de la franquicia de distribución de Global Markets por operación.
+#    formula: SUM(gf_franch_oper_rslt_amount)
+#    fields:
+#      - ho_master.t_o1dm_franchise_gm_daily.gf_franch_oper_rslt_amount
+
+terms: []

@@ -1,0 +1,108 @@
+# Glosario de negocio DEFINIDO A MANO para el catálogo simulado.
+#
+# El paso «Joins y glosario» incorpora los términos relacionados con la
+# pregunta. Si un mismo concepto tiene varias definiciones (p. ej. «morosidad»),
+# el agente lo detecta y puede pedir una aclaración.
+#   term: nombre oficial del término
+#   synonyms: formas en que lo dice el negocio
+#   definition: definición en lenguaje llano
+#   formula: regla de cálculo (opcional)
+#   fields: campos físicos que lo implementan (base.tabla.campo)
+
+terms:
+  - term: Tasa de mora
+    synonyms: [morosidad, mora, tasa de morosidad, ratio de mora, NPL, dudosos]
+    definition: Proporción del saldo vivo de la cartera que acumula más de 90 días de impago. Es el criterio regulatorio de morosidad.
+    formula: SUM(saldo vivo con más de 90 días de impago) / SUM(saldo vivo)
+    fields:
+      - ho_master.t_prsg_loan_delinquency.gf_days_past_due_number
+      - ho_master.t_prsg_loan_delinquency.gf_outstanding_amount
+
+  - term: Ratio de impagados
+    synonyms: [morosidad, impagados, impagos, recibos impagados, cuotas impagadas, alerta temprana]
+    definition: Porcentaje de préstamos con al menos una cuota impagada a la fecha de corte, sea cual sea su antigüedad. Indicador de alerta temprana.
+    formula: COUNT(préstamos con cuotas impagadas > 0) / COUNT(préstamos)
+    fields:
+      - ho_master.t_prsg_loan_delinquency.gf_unpaid_installments_number
+
+  - term: Saldo vivo
+    synonyms: [capital pendiente, riesgo vivo, saldo pendiente, cartera viva]
+    definition: Capital de un préstamo pendiente de amortizar en una fecha de corte.
+    fields:
+      - ho_master.t_prsg_loan_delinquency.gf_outstanding_amount
+      - ho_master.t_prsg_loans.gf_outstanding_amount
+
+  - term: Importe concedido
+    synonyms: [importe formalizado, concesión, nueva producción, importe en hipotecas, financiación concedida]
+    definition: Principal de un préstamo en el momento de su firma. La nueva producción de un periodo suma el importe concedido de los préstamos formalizados en él.
+    formula: SUM(importe concedido) de los préstamos con fecha de formalización en el periodo
+    fields:
+      - ho_master.t_prsg_loans.gf_granted_amount
+      - ho_master.t_prsg_loans.gf_formalization_date
+
+  - term: Hipoteca vivienda
+    synonyms: [hipoteca, hipotecas, préstamo hipotecario]
+    definition: Préstamo con garantía hipotecaria destinado a la adquisición de vivienda. En el catálogo, producto «Hipoteca vivienda».
+    formula: gf_loan_product_desc = 'Hipoteca vivienda'
+    fields:
+      - ho_master.t_prsg_loans.gf_loan_product_desc
+
+  - term: Cuenta a la vista
+    synonyms: [cuentas a la vista, cuenta corriente, depósitos a la vista, cuenta nómina]
+    definition: Cuenta con disponibilidad inmediata de los fondos. En el catálogo, producto «Cuenta a la vista».
+    formula: gf_product_type_desc = 'Cuenta a la vista'
+    fields:
+      - ho_master.t_pcta_accounts.gf_product_type_desc
+
+  - term: Saldo a fin de mes
+    synonyms: [saldo, saldo de cierre, saldo contable, saldos]
+    definition: Saldo contable de una cuenta el último día natural del mes.
+    fields:
+      - ho_master.t_pcta_account_balances_monthly.gf_end_month_balance_amount
+      - ho_master.t_pcta_account_balances_monthly.gf_cutoff_date
+
+  - term: Saldo medio
+    synonyms: [saldo medio mensual, saldo promedio]
+    definition: Media de los saldos diarios de una cuenta durante el mes.
+    fields:
+      - ho_master.t_pcta_account_balances_monthly.gf_avg_month_balance_amount
+
+  - term: Segmento Particulares
+    synonyms: [particulares, personas físicas, clientes particulares, banca retail]
+    definition: Clientes persona física no incluidos en Banca Personal. En el catálogo, segmento «Particulares».
+    formula: gf_customer_segment_desc = 'Particulares'
+    fields:
+      - ho_master.t_pcli_customers.gf_customer_segment_desc
+
+  - term: Gasto con tarjeta
+    synonyms: [compras con tarjeta, pagos con tarjeta, gasto, gastaron, consumo con tarjeta]
+    definition: Importe de las compras realizadas con tarjeta en comercios. No incluye retiradas de efectivo en cajero.
+    formula: SUM(importe de la operación con tarjeta)
+    fields:
+      - ho_master.t_pmpg_card_transactions.gf_txn_amount
+
+  - term: Tarjeta de crédito
+    synonyms: [crédito, tarjetas de crédito]
+    definition: Tarjeta cuyas compras se liquidan a final de mes o a plazos. En el catálogo, tipo «Crédito».
+    formula: gf_card_type_desc = 'Crédito'
+    fields:
+      - ho_master.t_pmpg_cards.gf_card_type_desc
+
+  - term: Categoría de comercio
+    synonyms: [categorías de comercio, sector del comercio, MCC, tipo de comercio]
+    definition: Agrupación de negocio del código MCC del comercio donde se realiza la compra.
+    fields:
+      - ho_master.t_pmpg_card_transactions.gf_merchant_category_desc
+
+  - term: Captación de clientes
+    synonyms: [altas de clientes, clientes nuevos, nuevos clientes, captación]
+    definition: Número de clientes dados de alta en un periodo.
+    formula: COUNT(clientes con fecha de alta en el periodo)
+    fields:
+      - ho_master.t_pcli_customers.gf_customer_entry_date
+
+  - term: Dirección territorial
+    synonyms: [territorial, territoriales, región, zona]
+    definition: Unidad organizativa que agrupa oficinas de un área geográfica.
+    fields:
+      - ho_master.t_pred_branches.gf_region_name
