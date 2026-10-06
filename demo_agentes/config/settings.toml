@@ -29,3 +29,15 @@ executor = 120
 [demo]
 # true = el pipeline avanza solo; false = modo presentador (botón «Siguiente paso»). (ADA_AUTOPLAY)
 autoplay = true
+
+[business]
+# Agente Business Understanding: tu agentic RAG (agents/business_understanding).
+# Carpeta de Qdrant en modo local, relativa a demo_agentes/.            (RAG_QDRANT_PATH)
+qdrant_path = "agentic_rag_qdrant_db"
+collection = "rag_md"                                                  # (RAG_COLLECTION)
+# Modelo de Bedrock; vacío = el LLM_MODEL de rag_common.py.              (RAG_MODEL)
+model = ""
+# Pasos máximos del bucle del agente (max_steps de AgenticRAG).
+max_steps = 10
+# Incluir el catálogo de temas y documentos en el prompt del sistema.
+catalog_in_prompt = true

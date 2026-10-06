@@ -88,3 +88,50 @@ def test_pseudocode_marks_unresolved_concepts_in_red(monkeypatch):
     text = html_text(app)
     assert 'ada-pill warn">Duda detectada' in text
     assert 'ada-pill err">Concepto por resolver' in text
+
+
+def make_bu_app(monkeypatch, indexed=True):
+    from tests import bu_fakes
+    from ui import runtime
+    from ui.bu import runtime as bu_runtime
+
+    st.cache_resource.clear()
+    monkeypatch.setattr(runtime, "build_services", lambda settings: fakes.fake_services())
+    monkeypatch.setattr(bu_runtime, "build_bu_service", lambda settings: bu_fakes.make_service(indexed=indexed))
+    at = AppTest.from_file(str(APP), default_timeout=60)
+    at.run()
+    at.switch_page("app_pages/business_understanding.py").run()
+    assert not at.exception
+    return at
+
+
+def test_business_understanding_answers_with_verified_citations(monkeypatch):
+    pytest.importorskip("qdrant_client")
+    app = make_bu_app(monkeypatch)
+    assert "Cómo funciona" in [e.label for e in app.expander]
+    example = next(b for b in app.button if b.key and b.key.startswith("bu_ex_"))
+    example.click().run()
+    assert not app.exception
+    turn = app.session_state["bu_turns"][-1]
+    assert turn.error is None and turn.sources
+    answer = " ".join(m.value for m in app.markdown)
+    assert ":blue-badge[" in answer and ":red-badge[" in answer  # verificada y no verificada
+    assert "Recorrido del agente" in html_text(app)
+    # Pregunta de seguimiento con la conversación anterior.
+    app.toggle(key="bu_follow").set_value(True).run()
+    app.text_input(key="bu_question").input("¿Puedes dar más detalle?").run()
+    assert app.session_state["bu_turns"][-1].followup
+
+
+def test_business_understanding_tabs_render(monkeypatch):
+    pytest.importorskip("qdrant_client")
+    app = make_bu_app(monkeypatch)
+    assert "Catálogo" in html_text(app) and "Cómo se ha troceado" in html_text(app)
+    app.slider(key="bu_kb_chunk").set_value(2).run()
+    assert not app.exception
+
+
+def test_business_understanding_without_index_explains_how_to_index(monkeypatch):
+    pytest.importorskip("qdrant_client")
+    app = make_bu_app(monkeypatch, indexed=False)
+    assert any("indexar_bu.py" in c.value for c in app.code)

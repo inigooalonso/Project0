@@ -1,0 +1,16 @@
+# Preguntas de ejemplo de Business Understanding (mismo formato que examples.yaml).
+# Los cambios se aplican al recargar la página.
+
+examples:
+  - label: Qué es la Franquicia de Distribución
+    icon: ":material/menu_book:"
+    question: Explícame qué significa Franquicia de Distribución y qué mide
+  - label: Fases del proceso
+    icon: ":material/account_tree:"
+    question: ¿Qué fases tiene el proceso de analítica de clientes de Europa?
+  - label: Europa frente a LATAM
+    icon: ":material/compare_arrows:"
+    question: ¿En qué se diferencia el proceso de analítica de clientes de LATAM del de Europa?
+  - label: Publicación y cesiones
+    icon: ":material/share:"
+    question: ¿Cómo se publica la Franquicia de Distribución y a quién se cede?

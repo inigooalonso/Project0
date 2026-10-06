@@ -35,6 +35,17 @@ WARNING_BG = "#FDF4DA"
 ERROR = "#B92A45"
 ERROR_BG = "#FCEBEE"
 
+# Herramientas del agente Business Understanding: (color, fondo).
+TOOL_COLORS = {
+    "search": (MEDIUM_BLUE, "#EAF2FA"),
+    "read_context": (DARK_AQUA, "#E5F5F5"),
+    "document_outline": (VIOLET, "#F1EEFC"),
+    "read_section": ("#C2620F", "#FEF1E7"),
+    "list_catalog": ("#8A6500", "#FBF4E0"),
+}
+# Colores por sección para el mapa de fragmentos (paleta categórica validada).
+SECTION_COLORS = [MEDIUM_BLUE, ORANGE, DARK_AQUA, VIOLET, MUSTARD, PINK]
+
 FONT_STACK = '"Source Sans Pro", "Source Sans 3", "Source Sans", system-ui, -apple-system, "Segoe UI", sans-serif'
 
 # Colores de las etiquetas del IR (identidad por texto + punto de color).
@@ -172,6 +183,62 @@ div[data-testid="stColumn"]:has(.st-key-ada_stepper) {{ position: sticky; top: 4
 .ada-round {{ border: 1px solid var(--ada-border); border-radius: 14px; padding: 0.4rem 1.1rem 0.9rem 1.1rem; margin-bottom: 0.8rem; background: #fff; }}
 .ada-round .h {{ font-size: 0.8rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ada-blue-2); margin-top: 0.6rem; }}
 .ada-round .a {{ margin: 0.2rem 0 0 2.4rem; color: var(--ada-text-2); border-left: 3px solid var(--ada-sky); padding-left: 0.7rem; }}
+
+/* Business Understanding */
+.bu-legend {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: 0.6rem; margin-top: 0.4rem; }}
+.bu-legend .it {{ border: 1px solid var(--ada-border); border-left: 4px solid var(--tool-color); border-radius: 12px; padding: 0.55rem 0.8rem; background: #fff; }}
+.bu-legend .it b {{ color: var(--tool-color); font-size: 0.9rem; }}
+.bu-legend .it code {{ font-size: 0.75rem; color: var(--ada-muted); background: none; padding: 0; }}
+.bu-legend .it p {{ margin: 0.15rem 0 0 0; font-size: 0.85rem; color: var(--ada-text-2); line-height: 1.35; }}
+.bu-timeline {{ position: relative; padding-left: 2.9rem; margin-top: 0.4rem; }}
+.bu-timeline::before {{ content: ""; position: absolute; left: 1.05rem; top: 0.6rem; bottom: 0.6rem; width: 2px; background: #D5DFEA; }}
+.bu-step {{ position: relative; margin-bottom: 1.1rem; }}
+.bu-step .dot {{ position: absolute; left: -2.9rem; top: -0.1rem; width: 2.15rem; height: 2.15rem; border-radius: 50%; background: var(--ada-blue);
+  color: #fff; font-weight: 700; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 0 4px #fff; }}
+.bu-step.final .dot {{ background: {DARK_AQUA}; }}
+.bu-step.live .dot {{ background: #fff; border: 2px solid var(--ada-blue); }}
+.bu-step .t {{ font-weight: 700; color: var(--ada-navy); font-size: 1.02rem; }}
+.bu-step .t span {{ font-weight: 500; color: var(--ada-muted); font-size: 0.85rem; margin-left: 0.4rem; }}
+.bu-think {{ color: var(--ada-text-2); font-style: italic; margin: 0.2rem 0 0.3rem 0; border-left: 3px solid var(--ada-sky); padding-left: 0.6rem; }}
+.bu-call {{ border: 1px solid var(--ada-border); border-left: 4px solid var(--tool-color); border-radius: 12px; padding: 0.55rem 0.9rem 0.6rem 0.9rem;
+  margin: 0.45rem 0; background: #fff; }}
+.bu-call.error {{ border-left-color: {ERROR}; background: {ERROR_BG}; }}
+.bu-call .head {{ display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }}
+.bu-tool {{ font-size: 0.72rem; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--tool-color);
+  background: var(--tool-bg); padding: 0.16rem 0.6rem; border-radius: 999px; }}
+.bu-q {{ font-weight: 600; color: var(--ada-navy); }}
+.bu-meta {{ margin-left: auto; font-size: 0.8rem; color: var(--ada-muted); }}
+.bu-chip {{ font-family: "Source Code Pro", monospace; font-size: 0.76rem; background: var(--ada-sky-soft); color: var(--ada-blue);
+  padding: 0.08rem 0.45rem; border-radius: 6px; white-space: nowrap; }}
+.bu-chip.cited {{ background: var(--ada-blue); color: #fff; }}
+.bu-chip.flt {{ background: #F1F3F5; color: var(--ada-text-2); font-family: inherit; }}
+.bu-hits {{ margin-top: 0.35rem; }}
+.bu-hit {{ display: grid; grid-template-columns: 7.2rem minmax(0, 1fr); gap: 0.7rem; align-items: center; padding: 0.28rem 0;
+  border-top: 1px dashed var(--ada-border); }}
+.bu-score {{ display: flex; align-items: center; gap: 0.4rem; font-size: 0.78rem; color: var(--ada-text-2); font-variant-numeric: tabular-nums; }}
+.bu-score .track {{ flex: 1; background: {GRID}; border-radius: 999px; height: 0.45rem; overflow: hidden; }}
+.bu-score .bar {{ height: 100%; border-radius: 999px; background: var(--tool-color, {MEDIUM_BLUE}); }}
+.bu-hit .where {{ font-size: 0.88rem; color: var(--ada-navy); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
+.bu-hit .prev {{ font-size: 0.8rem; color: var(--ada-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
+.bu-more {{ font-size: 0.8rem; color: var(--ada-muted); padding-top: 0.25rem; }}
+.bu-err {{ color: {ERROR}; font-size: 0.88rem; margin-top: 0.3rem; }}
+.bu-tree {{ margin-top: 0.35rem; font-size: 0.85rem; color: var(--ada-text-2); line-height: 1.5; }}
+.bu-live {{ display: flex; align-items: center; gap: 0.55rem; color: var(--ada-blue); font-weight: 600; }}
+[class*="st-key-bu_answer"] {{ border: 1px solid var(--ada-border); border-top: 4px solid {DARK_AQUA}; border-radius: 14px; padding: 1rem 1.25rem; background: #fff; }}
+[class*="st-key-bu_answer"] p, [class*="st-key-bu_answer"] li {{ font-size: 1.06rem; line-height: 1.55; }}
+.bu-cat {{ border: 1px solid var(--ada-border); border-radius: 14px; padding: 0.8rem 1.1rem; background: #fff; margin-bottom: 0.7rem; }}
+.bu-cat .h {{ font-weight: 700; color: var(--ada-navy); margin-bottom: 0.35rem; }}
+.bu-cat .row {{ display: grid; grid-template-columns: minmax(0, 1fr) 40% 3.5rem; gap: 0.7rem; align-items: center; padding: 0.2rem 0; }}
+.bu-cat .row .n {{ font-size: 0.9rem; color: var(--ada-navy); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
+.bu-cat .row .n small {{ color: var(--ada-muted); }}
+.bu-cat .row .c {{ font-size: 0.85rem; color: var(--ada-text-2); text-align: right; font-variant-numeric: tabular-nums; }}
+.bu-chunkmap {{ display: flex; flex-wrap: wrap; gap: 4px; margin: 0.4rem 0 0.6rem 0; }}
+.bu-chunk {{ height: 1.9rem; border-radius: 5px; min-width: 0.9rem; color: #fff; font-size: 0.7rem; display: flex; align-items: center;
+  justify-content: center; font-weight: 700; }}
+.bu-chunk.sel {{ outline: 3px solid var(--ada-navy); outline-offset: 1px; }}
+.bu-keys {{ display: flex; flex-wrap: wrap; gap: 0.4rem 1rem; font-size: 0.82rem; color: var(--ada-text-2); }}
+.bu-keys span::before {{ content: ""; display: inline-block; width: 0.75rem; height: 0.75rem; border-radius: 3px; background: var(--c);
+  margin-right: 0.35rem; vertical-align: -1px; }}
 
 /* Tarjeta de error elegante */
 .ada-error {{ border: 1px solid #F2C4CD; background: {ERROR_BG}; border-radius: 14px; padding: 1rem 1.2rem; margin-bottom: 0.8rem; }}

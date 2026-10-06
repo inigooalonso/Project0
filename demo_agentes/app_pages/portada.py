@@ -29,15 +29,15 @@ with left:
 with right:
     with st.container(border=True, key="card_bu"):
         st.html(
-            f'<div>{pill("Próximamente", "warn")}</div><div class="ada-agent-card" style="border:0;padding:0">'
+            f'<div>{pill("Disponible", "ok")}</div><div class="ada-agent-card" style="border:0;padding:0">'
             '<div class="name">Business Understanding</div>'
-            "<p>Agentic RAG que entiende el contexto de negocio: definiciones, políticas y procesos, citando siempre las fuentes.</p>"
-            "<ul><li>Planifica la búsqueda y la repite si falta evidencia.</li>"
-            "<li>Consulta glosario, normativa interna y documentación de datos.</li>"
-            "<li>Responde con citas y reconoce lo que no sabe.</li>"
-            "<li>Comparte catálogo y glosario con ADA.</li></ul></div>"
+            "<p>Agentic RAG que entiende el contexto de negocio: definiciones, procesos y normativa, citando siempre las fuentes.</p>"
+            "<ul><li>Decide qué buscar y reformula si los resultados son flojos.</li>"
+            "<li>Navega los documentos: índice, secciones completas y contexto de cada fragmento.</li>"
+            "<li>Responde solo con evidencia y cita cada fragmento usado.</li>"
+            "<li>Dice claramente lo que la documentación no cubre.</li></ul></div>"
         )
-        st.page_link("app_pages/business_understanding.py", label="Ver qué hará", icon=":material/arrow_forward:")
+        st.page_link("app_pages/business_understanding.py", label="Abrir Business Understanding", icon=":material/arrow_forward:")
 
 st.html('<div class="ada-section" style="font-size:1.25rem;margin-top:1.8rem">Por qué es fiable</div>')
 guarantees = [

@@ -3,9 +3,9 @@
 Dashboard en Streamlit para presentar dos agentes de IA a la dirección:
 
 - **ADA · Text2SQL**: convierte una pregunta de negocio en SQL validada y la ejecuta en Athena. El pipeline de 7 pasos se despliega paso a paso ante la audiencia, siempre con el detalle técnico a la vista.
-- **Business Understanding**: agentic RAG para el contexto de negocio. Página «Próximamente» con la descripción y el flujo previsto.
+- **Business Understanding**: tu agentic RAG sobre la documentación Markdown (Bedrock + Qdrant). El modelo decide qué buscar, lee lo necesario y responde citando cada fragmento; la página muestra todo el recorrido.
 
-Todo es real: tu agente LangGraph sobre Bedrock, tu RAG y Amazon Athena. No hay datos ni respuestas simulados.
+Todo es real: tus agentes sobre Bedrock, tu RAG, Qdrant y Amazon Athena. No hay datos ni respuestas simulados.
 
 ## Arranque
 
@@ -107,6 +107,64 @@ Tu nodo `decide_if_clarification_is_needed` pide «exactly one question», lo qu
 - **`prompts.py`:** contiene un `prompt_semantic_ir_outbound` **provisional**. Sustitúyelo por el tuyo.
 - **`ejemplo_cli.py`:** es tu bloque de lanzamiento por terminal (`python -m agents.ada_text2sql.ejemplo_cli`).
 
+## Business Understanding
+
+Tu código está en `agents/business_understanding/`, sin cambios: `rag_common.py`, `rag_save.py`, `rag_retrieve.py`, `agentic_rag.py` y el notebook `agentic_rag.ipynb`. Como sus módulos se importan entre sí por nombre (`from rag_common import ...`), el adaptador (`services/bu/service.py`) añade esa carpeta a `sys.path`.
+
+### Indexar la documentación
+
+```bash
+cd demo_agentes
+python scripts/indexar_bu.py ./docs            # añade o actualiza
+python scripts/indexar_bu.py ./docs --reset    # borra la colección y reindexa
+```
+
+- **Mismo índice que la app:** usa tu `RagSave` con la carpeta de Qdrant y la colección de `[business]` en `config/settings.toml` (`agentic_rag_qdrant_db/` y `rag_md` por defecto, o `RAG_QDRANT_PATH` / `RAG_COLLECTION`, las mismas variables que lee `rag_common.py`).
+- **Carpetas ocultas:** a diferencia de `save_directory`, salta carpetas como `.ipynb_checkpoints`. Tu índice actual contiene `.ipynb_checkpoints/ProcesoAnaliticaClientesEUROPA_V3-checkpoint.md`, que duplica resultados; reindexa con `--reset` para quitarlo. La pestaña «Base de conocimiento» avisa si detecta documentos así.
+- **Índice existente:** para usar el que ya creaste con el notebook, apunta `qdrant_path` a esa carpeta.
+- **Un solo proceso:** Qdrant local solo admite un cliente por carpeta. Cierra el notebook (o la app) antes de indexar.
+
+### Qué muestra la página
+
+| Bloque | Qué se ve |
+|---|---|
+| Cómo funciona | Diagrama de la indexación (rag_save) y del bucle del agente (agentic_rag), con las 5 herramientas |
+| Preguntar al agente | El recorrido **en vivo** mientras el agente trabaja; después, indicadores, respuesta, fuentes, mapa de evidencia y recorrido completo |
+| Base de conocimiento | Catálogo por tema con tamaño de cada documento, mapa de fragmentos de un documento (ancho = longitud, color = sección), texto de cada fragmento e índice de cabeceras |
+| Búsqueda directa | Una búsqueda semántica sin agente, para comparar con lo que hace el agente |
+
+Detalles de la respuesta:
+
+- **Citas verificadas:** cada cita `[doc.md#n]` sale como insignia azul si el agente recuperó ese fragmento (las `sources` de tu `Answer`). Si el modelo cita algo que no llegó a leer, sale en rojo como «no verificada» y no cuenta como fuente.
+- **Mapa de evidencia:** pregunta → documentos (agrupados por tema) → fragmentos leídos → respuesta. Los fragmentos que sostienen la respuesta, en azul.
+- **Recorrido:** un bloque por paso del modelo, con su razonamiento si lo escribe y cada herramienta:
+  - consulta y filtros, con los fragmentos devueltos y su puntuación;
+  - índice de cabeceras o catálogo, si es eso lo que pidió;
+  - errores, que el modelo recibe para decidir cómo seguir.
+- **Seguimiento:** «Continuar la conversación» envía la pregunta con la conversación anterior (`history`), como `preguntar(..., seguir=True)` del notebook.
+
+### Cómo se graba el recorrido sin tocar tu código
+
+`AgenticRAG` recibe un retriever y un LLM, y construye sus herramientas. El adaptador le pasa envoltorios de los tres (`services/bu/recorder.py`):
+
+- **Retriever:** cada llamada anota los fragmentos devueltos.
+- **LLM:** cada `invoke()` anota el texto, las herramientas pedidas y los tokens.
+- **Herramientas:** cada ejecución abre un evento con sus argumentos, duración y errores.
+
+Cada evento se pinta al momento, por eso el recorrido se ve en vivo.
+
+Configuración en `[business]` (`config/settings.toml`):
+
+| Clave | Por defecto | Uso |
+|---|---|---|
+| `qdrant_path` | `agentic_rag_qdrant_db` | carpeta de Qdrant |
+| `collection` | `rag_md` | colección |
+| `model` | vacío | si está vacío, el `LLM_MODEL` de `rag_common.py` |
+| `max_steps` | `10` | pasos del agente |
+| `catalog_in_prompt` | `true` | catálogo en el prompt |
+
+Preguntas de ejemplo en `data/real/bu_examples.yaml`.
+
 ## Robustez en directo
 
 - **Errores:** cualquier error de un servicio (credenciales, red, permisos, JSON inválido del LLM, SQL bloqueada) se muestra como un mensaje cuidado con el detalle técnico y dos opciones: **Reintentar** o **Empezar de nuevo**.
@@ -125,14 +183,18 @@ demo_agentes/
 ├── config/settings.toml       # módulo del agente, aclaraciones, dialecto, límites de tiempo
 ├── app_pages/                 # INTERFAZ: portada, ADA, Business Understanding
 ├── ui/                        # tema y CSS, stepper, vistas de cada paso, diagramas Graphviz
+│   └── bu/                    #   vistas de Business Understanding
 ├── core/                      # ORQUESTACIÓN: máquina de estados, orquestador, narrativa, contexto
 ├── services/                  # SERVICIOS: interfaces + adaptadores + factory.py
 │   ├── agent/                 #   langgraph_adapter.py (tus nodos) · capture.py (prompts y tokens)
 │   ├── rag/                   #   agent_adapter.py (tu retrieve_context_for_sql) · tables.py (tablas del paso 2)
 │   ├── knowledge/             #   joins y glosario en YAML
-│   └── executor/              #   athena.py (awswrangler)
-├── data/real/                 # examples.yaml, joins.yaml, glossary.yaml
-├── agents/ada_text2sql/       # tu código
+│   ├── executor/              #   athena.py (awswrangler)
+│   └── bu/                    #   adaptador del agentic RAG: service.py · recorder.py · models.py
+├── data/real/                 # examples.yaml, bu_examples.yaml, joins.yaml, glossary.yaml
+├── scripts/indexar_bu.py      # indexa Markdown para Business Understanding
+├── agents/ada_text2sql/       # tu código (ADA)
+├── agents/business_understanding/  # tu código (agentic RAG)
 └── tests/                     # tests con dobles de prueba (tests/fakes.py)
 ```
 
@@ -149,3 +211,9 @@ Los tests no necesitan red ni credenciales:
 - **Tu código:** se ejecuta con un LLM falso de LangChain: tus nodos, tu `invoke_pydantic`, tu `validate_read_only_sql` y tu `retrieve_context_for_sql`.
 - **Tablas del RAG:** variantes de nombres de columna, lectura del grain y tabla unificada.
 - **Esquema:** el esquema del IR es idéntico al compartido por el equipo.
+- **Business Understanding:** tu `RagSave`, `RagRetrieve` y `AgenticRAG` con Qdrant en memoria, embeddings deterministas en lugar de Titan y un LLM guionizado (`tests/bu_fakes.py`, documentos de prueba en `tests/fixtures/bu_docs/`). Comprueban:
+  - el troceado y la búsqueda;
+  - la grabación paso a paso del recorrido;
+  - las citas verificadas;
+  - el seguimiento con `history`;
+  - el límite de pasos y los errores.

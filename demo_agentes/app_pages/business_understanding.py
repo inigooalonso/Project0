@@ -1,54 +1,55 @@
-"""Business Understanding: agente en desarrollo (estado «Próximamente»)."""
+"""Business Understanding: agentic RAG sobre la documentación de negocio (tu código en agents/business_understanding)."""
 from __future__ import annotations
 
 import streamlit as st
 
+from core.formatting import fmt_int
+from ui.bu import runtime as bu
+from ui.bu import views
 from ui.components import esc, page_header, pill
-from ui.graphs import bu_flow_dot
 
-head_left, head_right = st.columns([0.75, 0.25], vertical_alignment="bottom")
+service, error = bu.get_service()
+
+head_left, head_right = st.columns([0.72, 0.28], vertical_alignment="bottom")
 with head_left:
     page_header(
-        "Agente 2 · En desarrollo",
+        "Agente 2 · Disponible",
         "Business Understanding",
-        "Un agente de RAG agéntico que entiende el contexto de negocio del banco: qué significa cada indicador, "
-        "qué política aplica y por qué un dato es como es, citando siempre la fuente.",
+        "Agentic RAG sobre la documentación de negocio: el modelo decide qué buscar, lee lo necesario "
+        "y responde citando cada fragmento.",
     )
 with head_right:
-    st.html(f'<div style="text-align:right">{pill("Próximamente", "warn", dot=False)}</div>')
+    pills = [pill("Disponible", "ok")]
+    if service is not None:
+        try:
+            if service.exists():
+                chunks = sum(i["chunks"] for d in service.catalog().values() for i in d.values())
+                pills.append(pill(f"{service.collection} · {fmt_int(chunks)} fragmentos", "info"))
+            else:
+                pills.append(pill(f"{service.collection} · sin indexar", "warn"))
+        except Exception:
+            pills.append(pill("Base de conocimiento no disponible", "err"))
+    st.html('<div style="display:flex;gap:0.4rem;justify-content:flex-end;flex-wrap:wrap">' + "".join(pills) + "</div>")
 
-st.space("small")
-left, right = st.columns([0.42, 0.58], gap="large")
-with left:
-    st.html('<div class="ada-section">Qué hará</div>')
-    capabilities = [
-        ("Planifica antes de buscar", "Descompone la pregunta en subpreguntas y decide qué fuentes consultar."),
-        ("Busca y contrasta", "Recorre glosario, políticas, normativa interna y documentación de datos; "
-                              "si la evidencia no basta, reformula y vuelve a buscar."),
-        ("Responde con citas", "Cada afirmación enlaza con su fuente. Si no encuentra respaldo, lo dice."),
-    ]
-    st.html("".join(
-        f'<div class="ada-card accent" style="margin-bottom:0.7rem"><h4>{esc(t)}</h4><p>{esc(d)}</p></div>'
-        for t, d in capabilities
-    ))
-with right:
-    st.html('<div class="ada-section">Flujo previsto</div>')
-    st.graphviz_chart(bu_flow_dot(), width="content")
+with st.expander("Cómo funciona", icon=":material/schema:", expanded=not bu.turns()):
+    views.how_it_works(service)
 
-st.html('<div class="ada-section">Preguntas que podrá responder</div>')
-examples = [
-    "¿Cómo se define la tasa de mora y en qué se diferencia del ratio de impagados?",
-    "¿Qué criterios se usan para clasificar a un cliente como Pyme?",
-    "¿Qué tablas contienen la franquicia de Global Markets y quién es su propietario?",
-]
-st.html('<div class="ada-tags">' + "".join(
-    f'<span class="ada-pill" style="font-size:0.95rem;padding:0.45rem 0.9rem">{esc(e)}</span>' for e in examples
-) + "</div>")
+if error is not None:
+    st.html(f'<div class="ada-error"><div class="t">{esc(error.title)}</div><div class="m">{esc(error.message)}</div></div>')
+    st.button("Reintentar", icon=":material/refresh:", type="primary", key="bu_retry")
+    if error.detail:
+        with st.expander("Detalle técnico", expanded=True):
+            st.code(error.detail, language="text", wrap_lines=True)
+    st.stop()
 
-st.space("small")
-st.html(
-    '<div class="ada-soon"><b style="color:#072146">Cómo se complementa con ADA.</b> '
-    '<span style="color:#46505C">ADA responde «¿cuánto?» con datos; Business Understanding responderá «¿qué significa, '
-    "qué regla aplica y por qué?». Ambos compartirán el catálogo y el glosario de negocio, de modo que una misma "
-    "definición se use igual al explicar un concepto que al calcularlo.</span></div>"
-)
+tab_ask, tab_kb, tab_search = st.tabs([":material/forum: Preguntar al agente", ":material/library_books: Base de conocimiento",
+                                       ":material/search: Búsqueda directa"])
+with tab_ask:
+    if not service.exists():
+        views.missing_collection(service)
+    else:
+        views.ask_tab(service)
+with tab_kb:
+    views.knowledge_tab(service)
+with tab_search:
+    views.search_tab(service)

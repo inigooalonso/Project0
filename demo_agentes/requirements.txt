@@ -1,4 +1,4 @@
-# Python 3.11+. La demo usa tu agente LangGraph sobre Bedrock, tu RAG y Athena.
+# Python 3.11+. ADA (LangGraph + Bedrock + Athena) y Business Understanding (agentic RAG + Qdrant).
 streamlit>=1.65,<2
 pandas>=2.2
 pydantic>=2.7,<3
@@ -9,4 +9,5 @@ langchain-core>=0.3.49   # incluye register_configure_hook (captura de prompts y
 langchain-aws>=0.2
 langgraph>=0.3
 awswrangler>=3.9         # ejecución en Athena (wr.athena.read_sql_query)
+qdrant-client>=1.10      # Business Understanding: base de conocimiento local
 pytest>=8.0              # tests (opcional en la máquina de la demo)

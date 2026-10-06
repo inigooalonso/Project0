@@ -61,28 +61,101 @@ def joins_dot(knowledge: KnowledgeResult, key_fields: dict[str, list[str]], labe
     return "\n".join(lines)
 
 
-def bu_flow_dot() -> str:
-    """Flujo previsto del agente Business Understanding (Agentic RAG)."""
-    lines = _graph_header(rankdir="TB", nodesep=0.5, ranksep=0.42)
-    node = 'fillcolor="{fill}", color="{fill}", fontcolor="{ink}", fontsize=14'
-    steps = [
-        ("q", "Pregunta de negocio", "«¿Cómo se define la tasa de mora?»", NAVY, "white"),
-        ("plan", "Planifica", "descompone la pregunta", CORE_BLUE, "white"),
-        ("search", "Busca", "glosario · políticas · documentación de datos", MEDIUM_BLUE, "white"),
-        ("check", "Evalúa la evidencia", "¿basta para responder?", "#9FD3F8", NAVY),
-        ("answer", "Responde", "con citas a las fuentes", DARK_AQUA, "white"),
-    ]
-    for key, title, sub, fill, ink in steps:
-        lines.append(f'  {key} [label=<<b>{_h(title)}</b><br/><font point-size="11">{_h(sub)}</font>>, '
-                     + node.format(fill=fill, ink=ink) + "];")
+# ---------------------------------------------------------------------
+# Business Understanding
+# ---------------------------------------------------------------------
+
+def _box(key: str, title: str, sub: str, fill: str, ink: str = "white", shape: str = "box") -> str:
+    sub_html = f'<br/><font point-size="10.5">{_h(sub)}</font>' if sub else ""
+    return (f'  {key} [shape={shape}, label=<<b>{_h(title)}</b>{sub_html}>, fillcolor="{fill}", color="{fill}", '
+            f'fontcolor="{ink}", fontsize=13];')
+
+
+def bu_indexing_dot(collection: str, embed_model: str) -> str:
+    """rag_save: Markdown → fragmentos por cabeceras → embeddings → Qdrant."""
+    lines = _graph_header(rankdir="TB", nodesep=0.3, ranksep=0.28)
     lines += [
-        "  q -> plan -> search -> check;",
-        '  check -> answer [label="  sí  "];',
-        f'  check -> search [label="  no: reformula  ", style=solid, color="{MUTED}", constraint=false];',
-        f'  sources [shape=note, style="filled", fillcolor="{SKY_SOFT}", color="{BORDER}", fontcolor="{TEXT_2}", fontsize=12, '
-        'label="Fuentes: glosario de negocio,\\npolíticas y normativa interna,\\ncatálogo y linaje de datos"];',
-        f'  search -> sources [dir=none, color="{BORDER}"];',
-        "  { rank=same; search; sources; }",
+        _box("md", "Documentos .md", "temas por carpeta o front matter", NAVY),
+        _box("chunk", "Trocea por cabeceras", "# … ###### · ≤ 1.500 caracteres", CORE_BLUE),
+        _box("emb", "Embeddings", embed_model, MEDIUM_BLUE),
+        _box("qd", "Qdrant", f"colección {collection}", DARK_AQUA, shape="cylinder"),
+        "  md -> chunk -> emb -> qd;",
         "}",
     ]
+    return "\n".join(lines)
+
+
+def bu_agent_dot(model: str, max_steps: int) -> str:
+    """agentic_rag: el modelo decide qué herramienta usar hasta tener evidencia suficiente."""
+    from ui.theme import TOOL_COLORS
+
+    lines = _graph_header(rankdir="LR", nodesep=0.12, ranksep=0.55)
+    lines += [
+        _box("q", "Pregunta", "", NAVY),
+        _box("llm", "Claude en Bedrock", model, CORE_BLUE),
+        _box("a", "Respuesta", "con citas verificadas", DARK_AQUA),
+        _box("qd", "Qdrant", "", "#9FD3F8", NAVY, shape="cylinder"),
+    ]
+    labels = {"search": "Buscar", "read_context": "Leer contexto", "document_outline": "Índice",
+              "read_section": "Leer sección", "list_catalog": "Catálogo"}
+    for name, label in labels.items():
+        color, bg = TOOL_COLORS[name]
+        lines.append(f'  t_{name} [label="{_h(label)}", fillcolor="{bg}", color="{color}", fontcolor="{color}", '
+                     'fontsize=12, margin="0.1,0.04"];')
+        lines.append(f'  llm -> t_{name} [color="{color}", arrowsize=0.5];')
+        lines.append(f'  t_{name} -> qd [color="#C9D5E2", arrowhead=none];')
+    lines += [
+        "  { rank=same; t_search; t_read_context; t_document_outline; t_read_section; t_list_catalog; }",
+        "  q -> llm;",
+        f'  llm -> a [label=<  <font point-size="10">evidencia<br/>suficiente</font>  >, color="{DARK_AQUA}", penwidth=1.8];',
+        f'  qd -> llm [style=dashed, color="{MUTED}", label=<<font point-size="10">  fragmentos · hasta {max_steps} pasos  </font>>, '
+        "constraint=false];",
+        "}",
+    ]
+    return "\n".join(lines)
+
+
+def evidence_dot(turn, max_chunks_per_doc: int = 5) -> str:
+    """Pregunta → documentos → fragmentos vistos → respuesta. Los citados, en azul."""
+    seen = turn.seen
+    verified = set(turn.sources)
+    lines = _graph_header(rankdir="LR", nodesep=0.12, ranksep=0.6)
+    lines.append(_box("q", "Pregunta", "", NAVY))
+    lines.append(_box("a", "Respuesta", f"{len(verified)} citas verificadas", DARK_AQUA))
+    by_doc: dict[str, list] = {}
+    for hit in seen.values():
+        by_doc.setdefault(hit.doc, []).append(hit)
+    by_topic: dict[str, list[str]] = {}
+    for doc, hits in by_doc.items():
+        by_topic.setdefault(hits[0].topic or "Sin tema", []).append(doc)
+
+    for t_index, (topic, docs) in enumerate(by_topic.items()):
+        lines.append(f'  subgraph cluster_{t_index} {{ label=<<font point-size="11" color="{MUTED}">tema · {_h(topic)}</font>>; '
+                     f'style="rounded,dashed"; color="{BORDER}";')
+        for d_index, doc in enumerate(docs):
+            hits = by_doc[doc]
+            cited = [h for h in hits if h.chunk_id in verified]
+            others = sorted((h for h in hits if h.chunk_id not in verified), key=lambda h: -(h.score or 0))
+            shown = cited + others[: max(0, max_chunks_per_doc - len(cited))]
+            dkey = f"d{t_index}_{d_index}"
+            title = hits[0].title or doc
+            lines.append(f'    {dkey} [shape=note, label=<<b>{_h(title[:48])}</b><br/><font point-size="10">{_h(doc[-52:])}</font>>, '
+                         f'fillcolor="{SKY_SOFT}", color="{BORDER}", fontcolor="{NAVY}", fontsize=12];')
+            lines.append(f"    q -> {dkey};")
+            for hit in sorted(shown, key=lambda h: h.position):
+                ckey = f"c_{abs(hash(hit.chunk_id))}"
+                is_cited = hit.chunk_id in verified
+                fill, ink = (CORE_BLUE, "white") if is_cited else ("#FFFFFF", TEXT_2)
+                label = f"#{hit.position} · {hit.section[:38]}"
+                lines.append(f'    {ckey} [label="{_h(label)}", fillcolor="{fill}", color="{CORE_BLUE if is_cited else BORDER}", '
+                             f'fontcolor="{ink}", fontsize=11, margin="0.1,0.04"];')
+                lines.append(f'    {dkey} -> {ckey} [color="{BORDER}"];')
+                if is_cited:
+                    lines.append(f'    {ckey} -> a [color="{CORE_BLUE}", penwidth=1.6];')
+            hidden = len(hits) - len(shown)
+            if hidden > 0:
+                lines.append(f'    {dkey}_more [label="+{hidden} vistos", shape=plaintext, fontcolor="{MUTED}", fontsize=10];')
+                lines.append(f'    {dkey} -> {dkey}_more [color="{BORDER}", style=dotted];')
+        lines.append("  }")
+    lines.append("}")
     return "\n".join(lines)
