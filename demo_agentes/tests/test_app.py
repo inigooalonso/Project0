@@ -74,3 +74,20 @@ def test_services_are_fixed_when_the_question_starts(app):
     button(app, "ex_hipotecas_oficina").click().run()
     run = app.session_state["ada_run"]
     assert run.modes == {"agent_mode": "mock", "rag_mode": "mock", "executor_mode": "mock"}
+
+
+def test_real_examples_replace_the_script_when_the_llm_is_bedrock(app, monkeypatch):
+    from services import examples as ex
+
+    monkeypatch.setattr(ex, "EXAMPLES_PATH", ex.EXAMPLES_PATH)  # restaurado al terminar
+    app.switch_page(ADA).run()
+    assert any(b.key == "ex_hipotecas_oficina" for b in app.button)
+    app.session_state["cfg_agent"] = "bedrock"
+    app.run()
+    assert not app.exception
+    real = ex.load_real_examples()
+    keys = {b.key for b in app.button}
+    if real:
+        assert {f"ex_{e.id}" for e in real} <= keys and "ex_hipotecas_oficina" not in keys
+    else:
+        assert "ex_hipotecas_oficina" in keys

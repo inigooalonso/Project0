@@ -13,6 +13,7 @@ from core.orchestrator import Orchestrator, ProgressCallback
 from core.pipeline import PipelineRun
 from core.settings import Settings, load_settings
 from services.factory import Services, build_services
+from services.examples import load_real_examples
 from services.scenarios import load_scenarios, match_scenario
 
 RUN_KEY = "ada_run"
@@ -163,6 +164,12 @@ def fallback_to_mock(service: str) -> None:
 
 
 def examples():
+    """Con el LLM real: data/real/examples.yaml (si tiene preguntas).
+    Con el agente simulado: los escenarios guionizados de data/mock/scenarios.yaml."""
+    if current_settings().agent_mode == "bedrock":
+        real = load_real_examples()
+        if real:
+            return real
     return load_scenarios()
 
 

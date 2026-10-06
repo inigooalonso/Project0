@@ -117,6 +117,8 @@ En la de morosidad, las dos definiciones dan un líder distinto: Almería · Pas
 
 Para añadir una pregunta, copia un escenario y ajusta su IR, su SQL y sus supuestos. Los tests comprueban que el IR valida y que la SQL usa exactamente las tablas que encuentra el RAG.
 
+**Ejemplos reales.** Con el LLM en «Bedrock · tu agente», los botones salen de `data/real/examples.yaml`. Ahí solo va la pregunta (más `label` e `icon` opcionales): tu agente genera el IR, el SQL y el resultado en tiempo de ejecución contra Athena. Si el fichero está vacío, se siguen mostrando los ejemplos simulados. Los cambios en ese fichero se aplican al recargar la página. `data/mock/scenarios.yaml` solo sirve para el agente simulado, porque cada escenario lleva escrito su IR y su SQL.
+
 ## Robustez en directo
 
 - **Errores de servicios reales:** cualquier error de un servicio real (credenciales, red, permisos, JSON inválido del LLM) se muestra como un mensaje cuidado con tres opciones:

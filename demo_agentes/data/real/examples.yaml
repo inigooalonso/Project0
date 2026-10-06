@@ -1,0 +1,20 @@
+# Preguntas de ejemplo para el MODO REAL (LLM = Bedrock).
+#
+# Solo necesitas la pregunta: tu agente genera el pseudocódigo, el SQL y el
+# resultado en tiempo de ejecución contra Athena. Los botones aparecen en la
+# página de ADA cuando en «Ajustes de la demo» eliges «Bedrock · tu agente»
+# (o arrancas con ADA_AGENT=bedrock). Si esta lista está vacía, se muestran
+# los ejemplos del guion simulado (data/mock/scenarios.yaml).
+#
+# Campos: question (obligatorio), label (texto del botón), icon (opcional,
+# iconos Material: https://fonts.google.com/icons), id (opcional).
+#
+# Los cambios en este fichero se aplican al recargar la página.
+
+examples:
+  # - label: Mesas de Global Markets
+  #   icon: ":material/trending_up:"
+  #   question: En 2026, ¿qué mesa de Global Markets ha generado más margen?
+  # - label: Morosidad por oficina
+  #   icon: ":material/warning:"
+  #   question: ¿Qué oficinas tienen la mayor tasa de morosidad?   # deja que tu agente pida aclaración
