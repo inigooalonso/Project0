@@ -20,14 +20,21 @@ ANSWER_KEY = "ada_answer_{run}_{round}_{index}"
 ANSWER_ERROR_KEY = "ada_answer_error"
 
 
-@st.cache_resource(show_spinner=False)
 def settings() -> Settings:
+    # Sin caché: se relee config/settings.toml en cada ejecución (es un fichero pequeño). Así, al
+    # cambiar el fichero o core/settings.py con la app en marcha, nunca queda una configuración antigua.
     return load_settings()
 
 
 @st.cache_resource(show_spinner=False)
+def _services(key: str, _settings: Settings) -> Services:
+    return build_services(_settings)
+
+
 def services() -> Services:
-    return build_services(settings())
+    # Los servicios sí se guardan, pero se reconstruyen si cambia la configuración.
+    current = settings()
+    return _services(repr(current), current)
 
 
 # ---------------------------------------------------------------------
