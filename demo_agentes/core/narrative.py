@@ -49,7 +49,7 @@ STEP_INFO: dict[StepId, StepInfo] = {
     ),
     StepId.CLARIFY: StepInfo(
         5, "Aclaraciones", "Dudas antes de seguir", ":material/forum:",
-        "El LLM decide si la pregunta es ambigua. Si lo es, hace todas sus preguntas a la vez y espera las respuestas.",
+        "El LLM decide si la pregunta es ambigua. Si lo es, pregunta y espera la respuesta antes de seguir.",
         "Ante la duda, pregunta: evita respuestas plausibles pero equivocadas.",
     ),
     StepId.SQL: StepInfo(

@@ -5,9 +5,13 @@
 # Módulo con tus nodos (parse_semantic_query, inject_query_context,
 # invoke_pydantic, generate_sql).                                     (ADA_AGENT_MODULE)
 module = "agents.ada_text2sql.agent"
-# Rondas de aclaración como máximo. En cada ronda el agente puede hacer
-# varias preguntas a la vez.
+# Paso 5 · Aclaraciones:                                               (ADA_CLARIFICATION_MODE)
+#   "node"  = tu nodo decide_if_clarification_is_needed tal cual (una pregunta por ronda);
+#   "batch" = el agente hace todas sus preguntas a la vez (prompt del adaptador).
+clarification_mode = "node"
+# Rondas de aclaración como máximo (además del límite que ponga tu nodo).
 max_clarification_rounds = 3
+# Solo en modo "batch": preguntas por ronda como máximo.
 max_questions_per_round = 5
 
 [sql]

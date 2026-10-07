@@ -338,34 +338,111 @@ def store_context(state: SQLAgentState) -> dict:
     return {"context": json.loads(last_tool_message.content)}
 
 
+def keep_first_question(text: str | None) -> str:
+    if not text:
+        return ""
+
+    text = text.strip()
+
+    # Nos quedamos con todo hasta el primer "?"
+    question_end = text.find("?")
+
+    if question_end != -1:
+        return text[:question_end + 1].strip()
+
+    # Fallback por si el modelo devuelve una pregunta sin "?"
+    first_line = next(
+        (line.strip() for line in text.splitlines() if line.strip()),
+        ""
+    )
+
+    return first_line
+
 def decide_if_clarification_is_needed(state: SQLAgentState) -> dict:
-    # Avoid an endless clarification loop.
-    if len(state.get("clarifications", [])) >= 3:
+    # Una sola ronda de aclaración como máximo.
+    if state.get("clarifications"):
         return {"pending_question": ""}
 
     decision = invoke_pydantic(
         ClarificationDecision,
-        """You are a data analyst preparing SQL.
+        """
+You are a business analyst helping to understand the user's analytical problem.
 
-Use the semantic query, retrieved context, and prior answers.
-Ask a question only if it is necessary to generate correct SQL:
-for example, an ambiguous metric definition, grain, time period,
-peer-group definition, or target dialect.
+Your goal is NOT to clarify database fields, variables, columns or SQL details.
+Your goal is to determine whether the BUSINESS QUESTION itself is sufficiently
+clear to proceed.
 
-Do not ask for information already present in the context.
-Ask exactly one concise question when needed.""",
+Ask a clarification question ONLY when there are two or more materially
+different interpretations of the user's business intent that would lead
+to substantially different answers.
+
+You may clarify only things such as:
+- the business objective or decision the user wants to make;
+- the population, customer group, product or business scope;
+- the comparison or benchmark intended;
+- the time horizon, ONLY when it materially changes the meaning of the analysis;
+- the business meaning of a concept when the user's wording is genuinely ambiguous.
+
+DO NOT ask the user about:
+- table names;
+- column names;
+- field mappings;
+- database variables;
+- joins;
+- SQL syntax;
+- SQL dialect;
+- schema details;
+- which technical field should represent a concept;
+- information that can reasonably be inferred from the retrieved metadata.
+
+Technical ambiguity must be resolved from the trusted context.
+If several technical implementations are possible but they represent the same
+business intent, do NOT ask the user.
+
+Prefer making a reasonable explicit assumption over asking a question.
+
+When no clarification is essential:
+{
+  "needs_clarification": false,
+  "question": null
+}
+
+When clarification is essential:
+{
+  "needs_clarification": true,
+  "question": "one short question expressed entirely in business language"
+}
+
+Ask at most ONE question.
+""",
         json.dumps(
             {
+                "user_query": state["user_query"],
                 "semantic_ir": state["semantic_ir"].model_dump(),
-                "context": state["context"],
-                "prior_answers": state.get("clarifications", []),
+                "prior_answers": state.get("clarifications", []
+                ),
             },
             ensure_ascii=False,
             default=str,
         ),
     )
 
-    return {"pending_question": decision.question or ""}
+    print("decision.question", decision.question, flush=True)
+    print("keep_first_question", keep_first_question(decision.question), flush=True)
+
+    with open("logs.txt", "w") as f:
+        f.write("decision.question: " + str(decision.question))
+        f.write("keep_first_question: " + str(keep_first_question(decision.question)))
+    
+    first_question = keep_first_question(decision.question)
+    
+    return {
+        "pending_question": (
+            first_question
+            if decision.needs_clarification
+            else ""
+        )
+    }
 
 
 def route_after_clarification_decision(

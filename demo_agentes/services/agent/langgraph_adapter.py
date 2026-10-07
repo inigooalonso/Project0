@@ -5,11 +5,12 @@ están en el grafo (joins y glosario, contexto, ejecución), medir cada paso y
 pausar en st.session_state. La pausa de ask_user (interrupt) la reproduce la
 máquina de estados con el mismo contrato: clarifications = [{question, answer}].
 
-Aclaraciones: tu nodo decide_if_clarification_is_needed pide «exactly one
-question», lo que obliga a ir pregunta → respuesta → pregunta. Para hacer
-todas las preguntas a la vez, el paso 5 usa tu invoke_pydantic y tu llm con
-el mismo mensaje de usuario y un prompt que pide la lista completa. Tu
-código no se modifica.
+Aclaraciones (agent.clarification_mode en config/settings.toml):
+- "node" (por defecto): se llama a tu nodo decide_if_clarification_is_needed
+  y su pending_question es la pregunta de la ronda;
+- "batch": el paso 5 usa tu invoke_pydantic y tu llm con el mismo mensaje de
+  usuario y un prompt que pide todas las preguntas a la vez.
+Tu código no se modifica.
 """
 from __future__ import annotations
 
@@ -87,9 +88,10 @@ If nothing is needed, return needs_clarification=false and an empty list."""
 class LangGraphAgentAdapter:
     name = "Bedrock · tu agente LangGraph"
 
-    def __init__(self, module_path: str, timeout_s: float = 60.0) -> None:
+    def __init__(self, module_path: str, timeout_s: float = 60.0, clarification_mode: str = "node") -> None:
         self.module_path = module_path
         self.timeout_s = timeout_s
+        self.clarification_mode = clarification_mode
         self._module = None
 
     @property
@@ -126,6 +128,12 @@ class LangGraphAgentAdapter:
 
     def decide_clarifications(self, state: dict[str, Any], max_questions: int) -> AgentCall[ClarificationBatch]:
         module = self.module
+        if self.clarification_mode == "node" and hasattr(module, "decide_if_clarification_is_needed"):
+            # Tu nodo, tal cual: decide si pregunta y devuelve {"pending_question": ...}.
+            result, capture = self._call(module.decide_if_clarification_is_needed, state)
+            question = str((result or {}).get("pending_question") or "").strip()
+            batch = ClarificationBatch(needs_clarification=bool(question), questions=[question] if question else [])
+            return self._telemetry(AgentCall(output=batch), capture)
         payload = json.dumps(clarification_payload(state), ensure_ascii=False, default=str)
         prompt = CLARIFICATION_PROMPT.format(max_questions=max_questions)
         batch, capture = self._call(module.invoke_pydantic, ClarificationBatch, prompt, payload)

@@ -17,6 +17,7 @@ class Settings:
     agent_module: str = "agents.ada_text2sql.agent"
     max_clarification_rounds: int = 3
     max_questions_per_round: int = 5
+    clarification_mode: str = "node"  # node = tu decide_if_clarification_is_needed | batch = varias preguntas a la vez
     dialect: str = "AWS Athena (Trino SQL)"
     sqlglot_dialect: str = "athena"
     database: str = "ho_master"
@@ -56,6 +57,8 @@ def load_settings(path: Path = SETTINGS_FILE) -> Settings:
         agent_module=env.get("ADA_AGENT_MODULE", agent.get("module", base.agent_module)),
         max_clarification_rounds=int(agent.get("max_clarification_rounds", base.max_clarification_rounds)),
         max_questions_per_round=int(agent.get("max_questions_per_round", base.max_questions_per_round)),
+        clarification_mode=_choice(env.get("ADA_CLARIFICATION_MODE", agent.get("clarification_mode", base.clarification_mode)),
+                                   ("node", "batch"), base.clarification_mode),
         dialect=sql.get("dialect", base.dialect),
         sqlglot_dialect=sql.get("sqlglot_dialect", base.sqlglot_dialect),
         database=sql.get("database", base.database),
@@ -72,6 +75,11 @@ def load_settings(path: Path = SETTINGS_FILE) -> Settings:
         bu_max_steps=int(business.get("max_steps", base.bu_max_steps)),
         bu_catalog_in_prompt=bool(business.get("catalog_in_prompt", base.bu_catalog_in_prompt)),
     )
+
+
+def _choice(value: str, allowed: tuple[str, ...], default: str) -> str:
+    value = str(value).strip().lower()
+    return value if value in allowed else default
 
 
 def _resolve(path: str) -> str:

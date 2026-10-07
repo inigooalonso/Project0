@@ -55,7 +55,7 @@ Tu código está en `agents/ada_text2sql/`, sin cambios de lógica. El orquestad
 | 2 RAG multinivel | `inject_query_context` → `retrieve_context_for_sql` | Tabla de candidatos, tabla unificada (en rojo lo que no cumple el grain) y tablas autorizadas |
 | 3 Joins y glosario | `data/real/joins.yaml` y `data/real/glossary.yaml`, definidos a mano | Grafo de joins y términos aplicados |
 | 4 Contexto | Se monta el `context` exacto que reciben tus nodos | Indicadores y el JSON enviado al LLM |
-| 5 Aclaraciones | Tu `invoke_pydantic` y tu `llm`, con todas las preguntas a la vez | Formulario con una respuesta por pregunta |
+| 5 Aclaraciones | Tu `decide_if_clarification_is_needed` (o, en modo `batch`, todas las preguntas a la vez) | Formulario con una respuesta por pregunta |
 | 6 SQL | `generate_sql` (incluye tu `validate_read_only_sql`) + validación con sqlglot | SQL, supuestos y validación |
 | 7 Ejecución | `wr.athena.read_sql_query(database="ho_master", workgroup="sandbox", ctas_approach=False)` | El DataFrame tal como lo devuelve Athena y la trazabilidad por paso |
 
@@ -97,14 +97,19 @@ return {
 - **Fuera del prompt:** estas dos tablas no se envían al LLM. Solo se pintan en pantalla.
 - **Dialecto:** se fuerza a `AWS Athena (Trino SQL)` (`sql.dialect`). Tu `retrieve_context_for_sql` vigente devuelve `snowflake`.
 
-### Paso 5 · Varias preguntas a la vez
+### Paso 5 · Aclaraciones
 
-Tu nodo `decide_if_clarification_is_needed` pide «exactly one question», lo que obliga a ir pregunta → respuesta → pregunta, y el agente acaba repitiendo la misma duda con otras palabras. El paso 5 usa tu `invoke_pydantic` y tu `llm`, con el mismo mensaje de usuario (IR, contexto y respuestas previas), y pide la lista completa de preguntas de una vez (`services/agent/langgraph_adapter.py`). Tu código no se modifica.
+Se elige con `clarification_mode` en `[agent]` (`config/settings.toml`) o con `ADA_CLARIFICATION_MODE`:
 
-- **Duplicados:** el prompt prohíbe repetir o reformular preguntas, y el adaptador descarta las duplicadas.
-- **Respuestas:** se responden todas en un formulario. Las que se dejan en blanco se envían como «Sin respuesta» y el agente declara el supuesto que use. Hace falta responder al menos una.
+| Modo | Qué se ejecuta |
+|---|---|
+| `node` (por defecto) | Tu nodo `decide_if_clarification_is_needed`, tal cual. Su `pending_question` es la pregunta de la ronda; si viene vacía, se pasa a la SQL. Tus `print` salen en la terminal donde lanzas `streamlit run`. |
+| `batch` | Tu `invoke_pydantic` y tu `llm` con un prompt del adaptador (`CLARIFICATION_PROMPT` en `services/agent/langgraph_adapter.py`) que pide todas las preguntas a la vez, sin duplicados. |
+
+- **Respuestas:** se responden en un formulario. Si hay varias preguntas, las que se dejan en blanco se envían como «Sin respuesta» y el agente declara el supuesto que use; hace falta responder al menos una.
 - **Contrato:** cada respuesta se guarda como en tu `ask_user`, `clarifications = [{"question", "answer"}]`, y `generate_sql` las recibe igual.
-- **Rondas:** tras responder, el agente vuelve a decidir, hasta `max_clarification_rounds` rondas.
+- **Rondas:** tras responder, el agente vuelve a decidir, hasta `max_clarification_rounds` rondas, además del límite que ponga tu nodo.
+- **Cambios en tu código:** Streamlit no recarga `agent.py` con la app en marcha; para y vuelve a lanzar `streamlit run`.
 
 ### Otros detalles
 

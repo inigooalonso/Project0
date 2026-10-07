@@ -44,7 +44,8 @@ def agent_module(monkeypatch):
 def test_adapter_runs_the_team_nodes_end_to_end(agent_module, settings):
     from dataclasses import replace
 
-    services = replace(fake_services(), agent=LangGraphAgentAdapter(MODULE), rag=AgentRAGAdapter(MODULE, settings.dialect),
+    services = replace(fake_services(), agent=LangGraphAgentAdapter(MODULE, clarification_mode="batch"),
+                       rag=AgentRAGAdapter(MODULE, settings.dialect),
                        executor=FakeExecutor())
     orchestrator = Orchestrator(services, settings)
     run = PipelineRun(QUESTION)
@@ -62,6 +63,37 @@ def test_adapter_runs_the_team_nodes_end_to_end(agent_module, settings):
     assert [c["answer"] for c in run.state["clarifications"]] == ["Margen", "Campo de franquicia"]
     prompts = run.steps[list(run.steps)[0]].prompts
     assert prompts and any("JSON" in p["content"] for p in prompts)
+
+
+def test_node_mode_uses_your_decide_if_clarification_is_needed(monkeypatch, settings, tmp_path, capsys):
+    import importlib
+    from dataclasses import replace
+
+    module = importlib.import_module(MODULE)
+    responses = [
+        json.dumps(SAMPLE_IR, ensure_ascii=False),
+        # Tu nodo se queda solo con la primera pregunta (keep_first_question).
+        json.dumps({"needs_clarification": True, "question": "¿Negocio es margen o volumen? ¿Y qué periodo?"}),
+        json.dumps({"sql": SQL, "assumptions": []}),
+    ]
+    monkeypatch.setattr(module, "llm", FakeListChatModel(responses=responses))
+    monkeypatch.chdir(tmp_path)  # tu nodo escribe logs.txt en el directorio actual
+    services = replace(fake_services(), agent=LangGraphAgentAdapter(MODULE), rag=AgentRAGAdapter(MODULE, settings.dialect),
+                       executor=FakeExecutor())
+    orchestrator = Orchestrator(services, settings)
+    run = PipelineRun(QUESTION)
+    for _ in range(20):
+        if run.phase == Phase.WAITING_USER:
+            assert run.pending_questions == ["¿Negocio es margen o volumen?"]
+            run.answer(["Margen"])
+        if run.phase in (Phase.DONE, Phase.ERROR):
+            break
+        orchestrator.run_current_step(run)
+    assert run.phase == Phase.DONE, run.error
+    assert run.state["clarifications"] == [{"question": "¿Negocio es margen o volumen?", "answer": "Margen"}]
+    assert len(run.rounds) == 1  # tu nodo no vuelve a preguntar tras una respuesta
+    assert "keep_first_question ¿Negocio es margen o volumen?" in capsys.readouterr().out  # tu print
+    assert (tmp_path / "logs.txt").exists()
 
 
 def test_rag_adapter_reads_your_stub_and_forces_athena(agent_module):
