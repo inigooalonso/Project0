@@ -118,10 +118,17 @@ class RAGResult(BaseModel):
     business_context: list[Any] = Field(default_factory=list)
     join_rules: list[Any] = Field(default_factory=list)
     raw_context: dict[str, Any] | None = None
+    # Avisos sobre los campos de schema_context:
+    unauthorized_field_tables: list[str] = Field(default_factory=list)  # campos de tablas no autorizadas
+    duplicated_fields: int = 0  # campos repetidos entre bloques
 
     @property
     def selected_tables(self) -> list[str]:
         return [t.name for t in self.tables]
+
+    @property
+    def field_count(self) -> int:
+        return sum(len(t.fields) for t in self.tables)
 
 
 # ---------------------------------------------------------------------

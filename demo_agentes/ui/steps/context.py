@@ -27,7 +27,8 @@ def render(run: PipelineRun) -> None:
             f'>{chips}</div></div>')
 
     st.html('<div class="ada-section">Lo que se envía al LLM</div>')
-    tab_msg, tab_tables, tab_ctx = st.tabs(["Mensaje de usuario (aclaraciones)", "Tablas autorizadas", "Contexto (JSON)"])
+    tab_msg, tab_tables, tab_fields, tab_ctx = st.tabs(
+        ["Mensaje de usuario (aclaraciones)", "Tablas autorizadas", "Campos (schema_context)", "Contexto (JSON)"])
     with tab_msg:
         payload = clarification_payload(run.state)
         st.code(json.dumps(payload, ensure_ascii=False, indent=2, default=str), language="json", height=360)
@@ -35,5 +36,12 @@ def render(run: PipelineRun) -> None:
                    "estructura con «clarifications».")
     with tab_tables:
         st.code("\n\n".join(b.context["authorized_tables"]), language="text", height=360, wrap_lines=True)
+    with tab_fields:
+        blocks = [x if isinstance(x, str) else json.dumps(x, ensure_ascii=False, default=str)
+                  for x in b.context["schema_context"]]
+        if blocks:
+            st.code("\n\n".join(blocks), language="text", height=360, wrap_lines=True)
+        else:
+            st.caption("Tu RAG no ha devuelto schema_context.")
     with tab_ctx:
         st.json(b.context, expanded=False)

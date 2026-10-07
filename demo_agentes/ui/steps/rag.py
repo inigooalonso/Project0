@@ -79,5 +79,22 @@ def render(run: PipelineRun) -> None:
             pd.DataFrame([{"Tabla": t.name, "Campos": len(t.fields), "Descripción": t.description} for t in rag.tables]),
             hide_index=True, width="stretch",
         )
+        empty = [t.short_name for t in rag.tables if not t.fields]
+        if empty:
+            st.warning(f"Sin campos en schema_context: **{', '.join(empty)}**. El LLM conoce la tabla pero no sus columnas.",
+                       icon=":material/table_rows:")
+        if rag.unauthorized_field_tables:
+            st.warning("schema_context describe campos de tablas que no están en authorized_tables y no se usan: "
+                       f"**{', '.join(t.split('.')[-1] for t in rag.unauthorized_field_tables)}**.", icon=":material/block:")
+        if rag.duplicated_fields:
+            st.caption(f"{rag.duplicated_fields} campos venían repetidos en varios bloques de schema_context y se cuentan una vez.")
+        for table in rag.tables:
+            if not table.fields:
+                continue
+            with st.expander(f"Campos de {table.short_name} ({len(table.fields)})", icon=":material/view_column:"):
+                st.dataframe(
+                    pd.DataFrame([{"Campo": f.name, "Etiqueta": f.label, "Descripción": f.description} for f in table.fields]),
+                    hide_index=True, width="stretch", height=min(420, 38 + 35 * len(table.fields)),
+                )
     with st.expander("Contexto devuelto por tu RAG (JSON)"):
         st.json(rag.raw_context or {}, expanded=False)

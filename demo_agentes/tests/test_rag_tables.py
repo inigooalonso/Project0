@@ -51,3 +51,26 @@ def test_rag_tables_never_reach_the_llm_context():
     result = build_result(dict(CONTEXT), "AWS Athena (Trino SQL)", "RAG")
     bundle = assemble_context(result, KnowledgeResult(), "AWS Athena (Trino SQL)")
     assert "rag_candidates" not in bundle.context and bundle.context["authorized_tables"] == result.authorized_tables
+
+
+def test_fields_in_schema_context_are_merged_into_authorized_tables():
+    from core.context import assemble_context
+    from core.models import KnowledgeResult
+
+    daily, monthly = "ho_master.t_x_daily", "ho_master.t_x_monthly"
+    context = {
+        "authorized_tables": [f"{daily}:\n-Description:diaria\n", f"{monthly}:\n-Description:mensual\n"],
+        "schema_context": [
+            f"{daily}:\n* f1: uno, primero\n* f2: dos, segundo\n",
+            f"{daily}:\n* f2: dos, segundo\n",               # repetido
+            f"{monthly}:\n* m1: mes, campo mensual\n",
+            "ho_master.t_otra:\n* z: zeta, no autorizada\n",  # tabla no autorizada
+            {"table": daily, "field": "f1"},                  # no es texto: se ignora
+        ],
+    }
+    result = build_result(context, "AWS Athena (Trino SQL)", "RAG")
+    assert [(t.name, [f.name for f in t.fields]) for t in result.tables] == [(daily, ["f1", "f2"]), (monthly, ["m1"])]
+    assert result.tables[0].fields[0].label == "uno" and result.tables[0].description == "diaria"
+    assert result.duplicated_fields == 1 and result.unauthorized_field_tables == ["ho_master.t_otra"]
+    bundle = assemble_context(result, KnowledgeResult(), "AWS Athena (Trino SQL)")
+    assert bundle.field_count == 3 and bundle.context["schema_context"] == context["schema_context"]

@@ -69,9 +69,11 @@ def test_rag_adapter_reads_your_stub_and_forces_athena(agent_module):
 
     result = AgentRAGAdapter(MODULE, "AWS Athena (Trino SQL)").search(Pydantic_SemanticQueryIR.model_validate(SAMPLE_IR))
     assert result.dialect == "AWS Athena (Trino SQL)"
-    assert result.raw_context["original_dialect"] == "snowflake"
-    assert result.selected_tables == ["ho_master.t_o1dm_franchise_gm_daily"]
-    assert len(result.tables[0].fields) == 5 and result.candidates == []
+    assert result.raw_context["original_dialect"] == "AWS Athena"
+    assert result.selected_tables == ["ho_master.t_o1dm_franchise_gm_daily", "ho_master.t_o1dm_franchise_gm_monthly"]
+    # Los campos llegan en schema_context; table_fields2 repite 3 campos de la tabla diaria.
+    assert [len(t.fields) for t in result.tables] == [90, 0] and result.duplicated_fields == 3
+    assert result.candidates == []
 
 
 def test_rag_adapter_reads_candidate_tables(agent_module, monkeypatch):

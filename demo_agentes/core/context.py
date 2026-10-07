@@ -23,7 +23,7 @@ def assemble_context(rag: RAGResult, knowledge: KnowledgeResult, dialect: str) -
         "business_context": business,
         "join_rules": joins,
     }
-    field_count = sum(max(block.count("\n* ") + 1, 1) for block in authorized if isinstance(block, str))
+    field_count = rag.field_count
     return ContextBundle(
         context=context,
         table_count=len(authorized),

@@ -64,7 +64,13 @@ Tu código está en `agents/ada_text2sql/`, sin cambios de lógica. El orquestad
 - **Duda detectada** (ámbar): cada elemento de `ambiguities`. El agente puede resolverla preguntando en el paso 5.
 - **Concepto por resolver** (rojo): los `unresolved_concepts`, términos que el agente no ha sabido mapear.
 
-### Paso 2 · Tablas del RAG
+### Paso 2 · Tablas y campos del RAG
+
+- **`authorized_tables`:** un bloque de texto por tabla, `"base.tabla:\n-Description:..."`. Puede traer también sus campos.
+- **`schema_context`:** bloques de texto con los campos, `"base.tabla:\n* campo: etiqueta, descripción"`. Cada bloque se asocia a la tabla autorizada con el mismo nombre, sin repetir campos.
+- **Avisos en el paso 2:** si una tabla autorizada se queda sin campos, si hay campos de una tabla no autorizada (no se usan) o si hay campos repetidos.
+
+Además, para las tablas de similitud:
 
 Tu `retrieve_context_for_sql` devuelve, además de lo que ya devolvía, dos listas de filas (por ejemplo, `df.to_dict("records")`):
 

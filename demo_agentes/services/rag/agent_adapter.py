@@ -1,7 +1,11 @@
 """Adaptador del RAG: tu tool inject_query_context → retrieve_context_for_sql.
 
 Lee del contexto que devuelve tu RAG:
-- ``authorized_tables``: bloques de texto con tu formato (tabla, descripción, campos);
+- ``authorized_tables``: bloques de texto con tu formato (tabla y descripción;
+  pueden traer también los campos);
+- ``schema_context``: bloques de texto con los campos de cada tabla
+  ("tabla:" + líneas "* campo: etiqueta, descripción"). Se añaden a la tabla
+  autorizada correspondiente, sin repetir campos;
 - ``rag_candidates`` y ``rag_unified``: tablas de similitud que se pintan en el
   paso 2 (formato en services/rag/tables.py).
 El dialecto se fuerza al configurado (Athena).
@@ -81,6 +85,7 @@ def build_result(context: dict[str, Any], dialect: str, source: str) -> RAGResul
         if parsed:
             tables.append(TableInfo(name=parsed["name"], description=parsed["description"],
                                     fields=[FieldInfo(**f) for f in parsed["fields"]]))
+    unauthorized, duplicated = merge_schema_fields(tables, context.get("schema_context") or [])
     candidates = parse_candidates(context)
     unified = parse_unified(context)
     derived = unified is None and bool(candidates)
@@ -93,4 +98,37 @@ def build_result(context: dict[str, Any], dialect: str, source: str) -> RAGResul
         business_context=list(context.get("business_context") or []),
         join_rules=list(context.get("join_rules") or []),
         raw_context=dict(context, original_dialect=original_dialect, dialect=dialect),
+        unauthorized_field_tables=unauthorized, duplicated_fields=duplicated,
     )
+
+
+def merge_schema_fields(tables: list[TableInfo], schema_context: list[Any]) -> tuple[list[str], int]:
+    """Añade a cada tabla autorizada los campos de los bloques de texto de schema_context.
+
+    Devuelve las tablas con campos que no están autorizadas (no se añaden) y
+    cuántos campos venían repetidos.
+    """
+    by_name = {t.name.lower(): t for t in tables}
+    unauthorized: list[str] = []
+    duplicated = 0
+    for block in schema_context:
+        if not isinstance(block, str):
+            continue
+        parsed = parse_table_block(block)
+        if not parsed or not parsed["fields"]:
+            continue
+        table = by_name.get(parsed["name"].lower())
+        if table is None:
+            if parsed["name"] not in unauthorized:
+                unauthorized.append(parsed["name"])
+            continue
+        known = {f.name for f in table.fields}
+        for field in parsed["fields"]:
+            if field["name"] in known:
+                duplicated += 1
+                continue
+            table.fields.append(FieldInfo(**field))
+            known.add(field["name"])
+        if parsed["description"] and not table.description:
+            table.description = parsed["description"]
+    return unauthorized, duplicated
