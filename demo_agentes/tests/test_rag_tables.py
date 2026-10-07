@@ -74,3 +74,15 @@ def test_fields_in_schema_context_are_merged_into_authorized_tables():
     assert result.duplicated_fields == 1 and result.unauthorized_field_tables == ["ho_master.t_otra"]
     bundle = assemble_context(result, KnowledgeResult(), "AWS Athena (Trino SQL)")
     assert bundle.field_count == 3 and bundle.context["schema_context"] == context["schema_context"]
+
+
+def test_joins_diagram_lists_every_field_of_each_table():
+    from core.models import KnowledgeResult
+    from ui.graphs import joins_dot
+
+    daily = "ho_master.t_x_daily"
+    names = [f"f{i}" for i in range(40)]
+    dot = joins_dot(KnowledgeResult(tables=[daily, "ho_master.t_x_monthly"]), {daily: names}, {daily: {"f3"}})
+    assert all(f'port="{n}"' for n in names) and all(f'port="{n}"' in dot for n in names)
+    assert "40 campos" in dot and "<b>f3</b>" in dot  # clave de join en negrita
+    assert "sin campos en schema_context" in dot      # la tabla mensual no trae campos

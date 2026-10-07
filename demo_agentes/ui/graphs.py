@@ -31,22 +31,40 @@ def _graph_header(rankdir: str = "LR", nodesep: float = 0.22, ranksep: float = 0
     ]
 
 
-def joins_dot(knowledge: KnowledgeResult, key_fields: dict[str, list[str]], labels: dict[str, str]) -> str:
-    """Grafo de tablas con la clave de unión en cada arista (estilo entidad-relación)."""
+def joins_dot(knowledge: KnowledgeResult, fields: dict[str, list[str]], keys: dict[str, set[str]],
+              rows_per_column: int = 18) -> str:
+    """Grafo de tablas con todos sus campos (en columnas) y la clave de unión en cada arista."""
     lines = _graph_header(nodesep=0.5, ranksep=1.1)
     lines.append('  node [shape=plain, style=""];')
     ids = {table: f"t{i}" for i, table in enumerate(knowledge.tables)}
     for table, node_id in ids.items():
         bridge = table in knowledge.bridge_tables
         head_bg = DARK_AQUA if bridge else CORE_BLUE
-        subtitle = "tabla puente" if bridge else labels.get(table, "")
+        names = fields.get(table, [])
+        table_keys = keys.get(table, set())
+        subtitle = "tabla puente" if bridge else f"{len(names)} {'campo' if len(names) == 1 else 'campos'}"
+        n_cols = max(1, -(-len(names) // rows_per_column))
+        n_rows = -(-len(names) // n_cols) if names else 0
+        columns = [names[c * n_rows:(c + 1) * n_rows] for c in range(n_cols)]
+
+        def cell(name: str | None) -> str:
+            if name is None:
+                return '<td bgcolor="white"></td>'
+            text = f"<b>{_h(name)}</b>" if name in table_keys else _h(name)
+            return (f'<td align="left" port="{_h(name)}" bgcolor="white">'
+                    f'<font point-size="12" color="{NAVY if name in table_keys else TEXT_2}">{text}</font></td>')
+
         rows = "".join(
-            f'<tr><td align="left" port="{_h(f)}" bgcolor="white"><font point-size="13" color="{TEXT_2}">{_h(f)}</font></td></tr>'
-            for f in key_fields.get(table, [])
+            "<tr>" + "".join(cell(col[r] if r < len(col) else None) for col in columns) + "</tr>"
+            for r in range(n_rows)
         )
+        if not names:
+            rows = (f'<tr><td bgcolor="white"><font point-size="12" color="{MUTED}">'
+                    "<i>sin campos en schema_context</i></font></td></tr>")
         lines.append(
-            f'  {node_id} [label=<<table border="1" cellborder="0" cellspacing="0" cellpadding="8" color="{BORDER}" style="rounded">'
-            f'<tr><td bgcolor="{head_bg}"><font color="white" point-size="15"><b>{_h(table.split(".")[-1])}</b></font><br/>'
+            f'  {node_id} [label=<<table border="1" cellborder="0" cellspacing="0" cellpadding="5" color="{BORDER}" style="rounded">'
+            f'<tr><td colspan="{n_cols}" bgcolor="{head_bg}" cellpadding="8"><font color="white" point-size="15">'
+            f'<b>{_h(table.split(".")[-1])}</b></font><br/>'
             f'<font color="#D9E7F5" point-size="12">{_h(subtitle)}</font></td></tr>{rows}</table>>];'
         )
     for rule in knowledge.joins:

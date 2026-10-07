@@ -9,21 +9,22 @@ from ui.components import esc
 from ui.graphs import joins_dot
 
 
-def _key_fields(run: PipelineRun) -> dict[str, list[str]]:
+def _table_fields(run: PipelineRun) -> tuple[dict[str, list[str]], dict[str, set[str]]]:
+    """Todos los campos de cada tabla: primero las claves de join, después el resto en el orden del RAG."""
+    keys: dict[str, set[str]] = {t: set() for t in run.knowledge.tables}
     fields: dict[str, list[str]] = {t: [] for t in run.knowledge.tables}
     for rule in run.knowledge.joins:
         for table, field in ((rule.left_table, rule.left_field), (rule.right_table, rule.right_field)):
+            keys.setdefault(table, set()).add(field)
             if field not in fields.setdefault(table, []):
                 fields[table].append(field)
     for table in run.rag.tables:
+        if table.name not in fields:
+            continue
         for f in table.fields:
-            if table.name in fields and f.name not in fields[table.name] and len(fields[table.name]) < 5:
+            if f.name not in fields[table.name]:
                 fields[table.name].append(f.name)
-    return fields
-
-
-def _labels(run: PipelineRun) -> dict[str, str]:
-    return {t.name: t.short_name for t in run.rag.tables}
+    return fields, keys
 
 
 def render(run: PipelineRun) -> None:
@@ -35,7 +36,8 @@ def render(run: PipelineRun) -> None:
                     f"{'regla' if len(k.joins) == 1 else 'reglas'} de join definidas por el equipo de datos.")
     st.html(f'<p class="ada-understood">{esc(sentence)}</p>')
     if k.tables:
-        st.graphviz_chart(joins_dot(k, _key_fields(run), _labels(run)), width="content")
+        fields, keys = _table_fields(run)
+        st.graphviz_chart(joins_dot(k, fields, keys), width="content")
     for bridge in k.bridge_tables:
         st.info(f"Ha añadido **{bridge.split('.')[-1]}** como tabla puente: las tablas encontradas no se unen "
                 "directamente y el camino más corto pasa por ella.", icon=":material/alt_route:")
